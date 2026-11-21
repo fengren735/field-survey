@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <!-- Proj4js for Coordinate Transformation -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+  <!-- DxfParser for CAD DXF Import -->
+  <script src="https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.min.js"></script>
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -547,7 +549,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.4 (16:53)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.0 (DXF)</span>
     </div>
   </div>
 
@@ -627,9 +629,10 @@
       <div class="sheet-content" id="sheetContent">
         <!-- Tabs -->
         <div class="tab-bar">
-          <div class="tab-item active" data-tab="tab-points">既知点一覧 (<span id="knownCount">0</span>)</div>
-          <div class="tab-item" data-tab="tab-csv">CSV取込 / 出力</div>
-          <div class="tab-item" data-tab="tab-settings">系・軸設定</div>
+          <div class="tab-item active" data-tab="tab-points">既知点 (<span id="knownCount">0</span>)</div>
+          <div class="tab-item" data-tab="tab-csv">CSV</div>
+          <div class="tab-item" data-tab="tab-dxf">CAD (DXF)</div>
+          <div class="tab-item" data-tab="tab-settings">系・設定</div>
         </div>
 
         <!-- Tab 1: Known Points List -->
@@ -666,6 +669,54 @@
           </button>
         </div>
 
+        <!-- Tab 3: CAD (DXF) Import -->
+        <div class="tab-panel" id="tab-dxf">
+          <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569; line-height:1.5;">
+            <b>📐 DXF（CAD図面）取込</b><br>
+            測量CAD（AutoCAD / Jw_cad等）のDXFファイル（線・ポリライン・点・文字）を国土地理院地図上に直接展開します。<br>
+            ※現在の適用系「<b id="dxfCurrentZoneLabel">第IX系</b>」・「<span class="axis-mode-text">測量系</span>」で変換されます。
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">DXFファイルを選択 (.dxf)</label>
+            <input type="file" id="dxfFileInput" accept=".dxf" class="input-text">
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted);">
+            <span>読込図面状態: <b id="dxfStatusText" style="color:var(--text);">未読込</b></span>
+            <span id="dxfEntityCount"></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <button class="btn btn-primary btn-sm" id="btnZoomToDxf" disabled>
+              📐 図面全体へ移動
+            </button>
+            <button class="btn btn-danger btn-sm" id="btnClearDxf" disabled>
+              🗑️ 図面消去
+            </button>
+          </div>
+
+          <div class="form-group" style="margin-top:4px;">
+            <label class="form-label">図面の表示設定</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="dxfColorSelect" class="select-box" style="padding:4px 8px; font-size:12px;">
+                <option value="#2563eb">線色: ブルー (青)</option>
+                <option value="#dc2626">線色: レッド (赤)</option>
+                <option value="#d97706">線色: オレンジ (橙)</option>
+                <option value="#059669">線色: グリーン (緑)</option>
+                <option value="#0f172a">線色: ブラック (黒)</option>
+                <option value="#ffffff">線色: ホワイト (白/写真用地図向)</option>
+              </select>
+              <select id="dxfWeightSelect" class="select-box" style="padding:4px 8px; font-size:12px; width:110px;">
+                <option value="2">線幅: 標準 (2px)</option>
+                <option value="3" selected>線幅: 太め (3px)</option>
+                <option value="4">線幅: 極太 (4px)</option>
+                <option value="1">線幅: 細め (1px)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- Tab 3: System & Axis Settings -->
         <div class="tab-panel" id="tab-settings">
           <div class="form-group">
@@ -699,7 +750,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.0.4 (16:53)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.0 (DXF対応)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -813,7 +864,12 @@ const State = {
   isWatchingGps: false,
   watchId: null,
   knownPoints: [], // [{ id, name, x, y, h, zoneId, lat, lng }]
-  activeLayer: 'std' // std, pale, photo
+  activeLayer: 'std', // std, pale, photo
+  dxfRawText: null, // 読み込んだDXFの生テキスト (軸切替時の再計算用)
+  dxfData: null, // 解析済みDXFデータ
+  dxfLayers: {}, // レイヤー名ごとの管理
+  dxfColor: '#2563eb',
+  dxfWeight: 3
 };
 
 // --- 3. ユーティリティ関数 ---
@@ -977,6 +1033,7 @@ document.getElementById('btnToggleLayers').addEventListener('click', () => {
 let gpsMarker = null;
 let gpsCircle = null;
 const knownMarkerGroup = L.layerGroup().addTo(map);
+const dxfLayerGroup = L.featureGroup().addTo(map); // DXF図面グループ
 
 // --- 5. UIの初期化とイベント設定 ---
 function initUi() {
@@ -1098,6 +1155,19 @@ function initUi() {
   document.getElementById('btnExportCsv').addEventListener('click', handleCsvExport);
   document.getElementById('btnCopyCsvText').addEventListener('click', handleCopyCsvText);
   document.getElementById('btnClearAllPoints').addEventListener('click', clearAllPoints);
+
+  // DXF (CAD)
+  document.getElementById('dxfFileInput').addEventListener('change', handleDxfFileSelect);
+  document.getElementById('btnZoomToDxf').addEventListener('click', zoomToDxfBounds);
+  document.getElementById('btnClearDxf').addEventListener('click', clearDxfData);
+  document.getElementById('dxfColorSelect').addEventListener('change', (e) => {
+    State.dxfColor = e.target.value;
+    renderDxfEntities();
+  });
+  document.getElementById('dxfWeightSelect').addEventListener('change', (e) => {
+    State.dxfWeight = parseInt(e.target.value, 10);
+    renderDxfEntities();
+  });
 }
 
 function activateTab(tabId) {
@@ -1111,11 +1181,20 @@ function updateAxisLabels() {
   document.getElementById('axisModeLabel').textContent = modeName;
   document.querySelectorAll('.axis-mode-text').forEach(el => el.textContent = isSur ? '測量系' : '数学系');
 
+  const zone = JGD_ZONES.find(z => z.id === State.currentZoneId);
+  const dxfZoneEl = document.getElementById('dxfCurrentZoneLabel');
+  if (dxfZoneEl && zone) dxfZoneEl.textContent = zone.name;
+
   document.getElementById('dispLabelX').textContent = isSur ? "X(北):" : "X(東):";
   document.getElementById('dispLabelY').textContent = isSur ? "Y(東):" : "Y(北):";
 
   document.getElementById('modalLabelX').textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
   document.getElementById('modalLabelY').textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
+
+  // DXFが読み込み済みなら軸・系変更に合わせて再描画
+  if (State.dxfData) {
+    renderDxfEntities();
+  }
 }
 
 // --- 6. GPS位置測位 ---
@@ -1394,7 +1473,275 @@ function renderKnownPoints() {
   });
 }
 
-// グローバルスコープ公開 (HTMLインラインonclick用)
+// --- 10. DXF (CAD) 図面の読み込み・描画処理 ---
+
+// ファイル読み込み (UTF-8 / Shift_JIS 自動判定)
+function readDxfFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target.result;
+        // まずUTF-8でデコード
+        let text = new TextDecoder('utf-8').decode(buffer);
+        // 置換文字  (U+FFFD) が含まれる場合はShift_JISで再デコード (日本のCADで多い)
+        if (text.includes('\uFFFD')) {
+          try {
+            text = new TextDecoder('shift_jis').decode(buffer);
+          } catch (e2) {
+            console.warn('Shift_JIS decode fallback:', e2);
+          }
+        }
+        resolve(text);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// 簡易自前DXFパーサー (DxfParser CDNがオフライン等で利用できない場合の堅牢なフォールバック)
+function parseDxfFallback(text) {
+  const lines = text.split(/\r?\n/);
+  const entities = [];
+  let currentEntity = null;
+  let inEntitiesSection = false;
+
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    const code = parseInt(lines[i].trim(), 10);
+    const val = lines[i + 1] ? lines[i + 1].trim() : '';
+
+    if (code === 2 && (val === 'ENTITIES')) {
+      inEntitiesSection = true;
+      continue;
+    }
+    if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) {
+      if (currentEntity) entities.push(currentEntity);
+      currentEntity = null;
+      if (val === 'ENDSEC') inEntitiesSection = false;
+      continue;
+    }
+
+    if (!inEntitiesSection) continue;
+
+    if (code === 0) {
+      if (currentEntity) entities.push(currentEntity);
+      currentEntity = { type: val, layer: '0', vertices: [] };
+    } else if (currentEntity) {
+      if (code === 8) currentEntity.layer = val;
+      if (code === 10) currentEntity.tempX = parseFloat(val);
+      if (code === 20) {
+        currentEntity.tempY = parseFloat(val);
+        if (currentEntity.type === 'LWPOLYLINE' || currentEntity.type === 'POLYLINE') {
+          currentEntity.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
+        } else if (currentEntity.type === 'POINT') {
+          currentEntity.position = { x: currentEntity.tempX, y: currentEntity.tempY };
+        } else if (currentEntity.type === 'TEXT' || currentEntity.type === 'MTEXT') {
+          currentEntity.startPoint = { x: currentEntity.tempX, y: currentEntity.tempY };
+        }
+      }
+      if (code === 11) currentEntity.tempX2 = parseFloat(val);
+      if (code === 21) {
+        currentEntity.tempY2 = parseFloat(val);
+        if (currentEntity.type === 'LINE') {
+          currentEntity.vertices = [
+            { x: currentEntity.tempX, y: currentEntity.tempY },
+            { x: currentEntity.tempX2, y: currentEntity.tempY2 }
+          ];
+        }
+      }
+      if (code === 1) currentEntity.text = val;
+      if (code === 70 && (val === '1' || val === '129')) currentEntity.shape = true; // closed
+    }
+  }
+  return { entities };
+}
+
+async function handleDxfFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  showToast('DXFファイルを解析中...');
+  document.getElementById('dxfStatusText').textContent = '読込中...';
+
+  try {
+    const rawText = await readDxfFileAsText(file);
+    State.dxfRawText = rawText;
+
+    let dxf = null;
+    if (window.DxfParser) {
+      try {
+        const parser = new window.DxfParser();
+        dxf = parser.parseSync(rawText);
+      } catch (parserErr) {
+        console.warn('dxf-parser failed, fallback to builtin parser:', parserErr);
+        dxf = parseDxfFallback(rawText);
+      }
+    } else {
+      dxf = parseDxfFallback(rawText);
+    }
+
+    if (!dxf || !dxf.entities || dxf.entities.length === 0) {
+      alert('有効なCAD図面データ（線や点）が見つかりませんでした。');
+      document.getElementById('dxfStatusText').textContent = '読込失敗';
+      return;
+    }
+
+    State.dxfData = dxf;
+    renderDxfEntities(true); // 初回は図面にズーム
+
+    // UI更新
+    document.getElementById('btnZoomToDxf').disabled = false;
+    document.getElementById('btnClearDxf').disabled = false;
+    showToast(`DXF取込完了 (${dxf.entities.length} 要素)`);
+  } catch (err) {
+    console.error('DXF error:', err);
+    alert('DXF読み込みエラー: ' + err.message);
+    document.getElementById('dxfStatusText').textContent = 'エラー';
+  }
+}
+
+// DXFエンティティの地図描画
+function renderDxfEntities(shouldZoom = false) {
+  dxfLayerGroup.clearLayers();
+  State.dxfLayers = {};
+
+  if (!State.dxfData || !State.dxfData.entities) return;
+
+  const entities = State.dxfData.entities;
+  const isSur = State.isSurveyAxis;
+  const zoneId = State.currentZoneId;
+  const color = State.dxfColor;
+  const weight = State.dxfWeight;
+
+  let lineCount = 0;
+  let polyCount = 0;
+  let pointCount = 0;
+  let textCount = 0;
+
+  entities.forEach((ent) => {
+    const layerName = ent.layer || '0';
+    if (!State.dxfLayers[layerName]) {
+      State.dxfLayers[layerName] = [];
+    }
+    State.dxfLayers[layerName].push(ent);
+
+    // 1. 直線 (LINE)
+    if (ent.type === 'LINE' && ent.vertices && ent.vertices.length >= 2) {
+      const p1 = xyToLatLng(ent.vertices[0].x, ent.vertices[0].y, zoneId, isSur);
+      const p2 = xyToLatLng(ent.vertices[1].x, ent.vertices[1].y, zoneId, isSur);
+      if (p1 && p2) {
+        const line = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
+          color: color,
+          weight: weight,
+          opacity: 0.85
+        });
+        line.bindPopup(`<div style="font-size:11px;"><b>CAD LINE</b><br>画層: ${layerName}</div>`);
+        dxfLayerGroup.addLayer(line);
+        lineCount++;
+      }
+    }
+
+    // 2. 連続線 / ポリライン (LWPOLYLINE / POLYLINE)
+    else if ((ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') && ent.vertices && ent.vertices.length > 0) {
+      const latlngs = [];
+      ent.vertices.forEach(v => {
+        const ll = xyToLatLng(v.x, v.y, zoneId, isSur);
+        if (ll) latlngs.push([ll.lat, ll.lng]);
+      });
+
+      if (latlngs.length >= 2) {
+        const isClosed = ent.shape === true || (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
+        const poly = isClosed
+          ? L.polygon(latlngs, { color: color, weight: weight, fillOpacity: 0.1, fillColor: color })
+          : L.polyline(latlngs, { color: color, weight: weight, opacity: 0.85 });
+
+        poly.bindPopup(`<div style="font-size:11px;"><b>CAD 折れ線/画地</b><br>画層: ${layerName}<br>頂点数: ${latlngs.length}</div>`);
+        dxfLayerGroup.addLayer(poly);
+        polyCount++;
+      }
+    }
+
+    // 3. 測量点 / ポイント (POINT)
+    else if (ent.type === 'POINT' && ent.position) {
+      const ll = xyToLatLng(ent.position.x, ent.position.y, zoneId, isSur);
+      if (ll) {
+        const marker = L.circleMarker([ll.lat, ll.lng], {
+          radius: 4,
+          color: color,
+          fillColor: '#ffffff',
+          fillOpacity: 1,
+          weight: 2
+        });
+        marker.bindPopup(`<div style="font-size:11px;"><b>CAD POINT</b><br>画層: ${layerName}<br>X: ${formatCoord(ent.position.x, 3)}<br>Y: ${formatCoord(ent.position.y, 3)}</div>`);
+        dxfLayerGroup.addLayer(marker);
+        pointCount++;
+      }
+    }
+
+    // 4. 文字 (TEXT / MTEXT)
+    else if ((ent.type === 'TEXT' || ent.type === 'MTEXT') && (ent.startPoint || ent.position)) {
+      const pt = ent.startPoint || ent.position;
+      const ll = xyToLatLng(pt.x, pt.y, zoneId, isSur);
+      if (ll && ent.text) {
+        const textIcon = L.divIcon({
+          className: 'dxf-text-icon',
+          html: `<div style="color:${color}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white;">${ent.text}</div>`,
+          iconAnchor: [0, 10]
+        });
+        const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon });
+        dxfLayerGroup.addLayer(textMarker);
+        textCount++;
+      }
+    }
+  });
+
+  const totalDrawn = lineCount + polyCount + pointCount + textCount;
+  const layerKeys = Object.keys(State.dxfLayers);
+
+  document.getElementById('dxfStatusText').textContent = `描画中 (${layerKeys.length} 画層)`;
+  document.getElementById('dxfEntityCount').textContent = `線:${lineCount + polyCount} 点:${pointCount} 文字:${textCount}`;
+
+  if (shouldZoom && totalDrawn > 0) {
+    zoomToDxfBounds();
+  }
+}
+
+// 図面全体にズーム
+function zoomToDxfBounds() {
+  if (!dxfLayerGroup || dxfLayerGroup.getLayers().length === 0) {
+    showToast('描画された図面がありません');
+    return;
+  }
+  const bounds = dxfLayerGroup.getBounds();
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 22, animate: true });
+    // ボトムシートを閉じて地図を見やすくする
+    document.getElementById('bottomBar').classList.remove('expanded');
+    document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+    showToast('図面全体を表示しました');
+  }
+}
+
+// 図面消去
+function clearDxfData() {
+  if (!State.dxfData) return;
+  if (!confirm('取り込んだCAD図面を消去しますか？')) return;
+
+  dxfLayerGroup.clearLayers();
+  State.dxfData = null;
+  State.dxfRawText = null;
+  State.dxfLayers = {};
+
+  document.getElementById('dxfFileInput').value = '';
+  document.getElementById('dxfStatusText').textContent = '未読込';
+  document.getElementById('dxfEntityCount').textContent = '';
+  document.getElementById('btnZoomToDxf').disabled = true;
+  document.getElementById('btnClearDxf').disabled = true;
+  showToast('CAD図面を消去しました');
+}
 window.focusPoint = (lat, lng) => {
   map.setView([lat, lng], 18, { animate: true });
   document.getElementById('bottomBar').classList.remove('expanded');
