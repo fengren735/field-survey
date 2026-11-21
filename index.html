@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="測量マップ">
   <title>測量マップ - 国土地理院地図＆平面直角座標</title>
 
   <!-- Leaflet CSS -->
@@ -188,9 +191,15 @@
 
     .main-actions-grid {
       display: grid;
-      grid-template-columns: 1.3fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
       margin-bottom: 6px;
+    }
+    .sub-actions-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 4px;
     }
 
     .btn {
@@ -525,16 +534,26 @@
         <button class="btn btn-secondary btn-sm" id="btnToggleSheet" style="height:100%;">詳細 ▾</button>
       </div>
 
-      <!-- Primary Action Buttons (Thumb friendly) -->
+      <!-- Quick Move Buttons (Jump to Current Pos / Known Points) -->
       <div class="main-actions-grid">
-        <button class="btn btn-primary" id="btnGps">
-          <span id="gpsIcon">📍</span> <span id="gpsText">GPS測位開始</span>
+        <button class="btn btn-primary" id="btnMoveToCurrent">
+          🎯 現在地に移動
+        </button>
+        <button class="btn btn-secondary" id="btnMoveToKnown">
+          📍 既知点に移動
+        </button>
+      </div>
+
+      <!-- Management & Tracking Actions -->
+      <div class="sub-actions-grid">
+        <button class="btn btn-secondary" id="btnGps">
+          <span id="gpsIcon">🛰️</span> <span id="gpsText">GPS測位開始</span>
         </button>
         <button class="btn btn-secondary" id="btnAddKnownModal">
-          ＋ 既知点追加
+          ＋ 点追加
         </button>
         <button class="btn btn-secondary" id="btnOpenSheet">
-          📁 既知点一覧
+          📁 一覧・設定
         </button>
       </div>
 
@@ -574,8 +593,11 @@
 
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
             <button class="btn btn-primary btn-sm" id="btnImportCsv">📥 CSVインポート</button>
-            <button class="btn btn-secondary btn-sm" id="btnExportCsv">📤 CSVエクスポート</button>
+            <button class="btn btn-secondary btn-sm" id="btnExportCsv">📤 CSV保存 (共有/DL)</button>
           </div>
+          <button class="btn btn-secondary btn-sm" id="btnCopyCsvText" style="width:100%; margin-top:6px;">
+            📋 CSVテキストをクリップボードにコピー
+          </button>
         </div>
 
         <!-- Tab 3: System & Axis Settings -->
@@ -936,9 +958,13 @@ function initUi() {
     });
   });
 
+  // 移動ボタン
+  document.getElementById('btnMoveToCurrent').addEventListener('click', moveToCurrentPosition);
+  document.getElementById('btnMoveToKnown').addEventListener('click', moveToKnownPoints);
+
   // GPSボタン
   document.getElementById('btnGps').addEventListener('click', toggleGps);
-  document.getElementById('btnRecenter').addEventListener('click', recenterMap);
+  document.getElementById('btnRecenter').addEventListener('click', moveToCurrentPosition);
 
   // 既知点モーダル
   document.getElementById('btnAddKnownModal').addEventListener('click', () => openKnownModal());
@@ -950,6 +976,7 @@ function initUi() {
   // CSV
   document.getElementById('btnImportCsv').addEventListener('click', handleCsvImport);
   document.getElementById('btnExportCsv').addEventListener('click', handleCsvExport);
+  document.getElementById('btnCopyCsvText').addEventListener('click', handleCopyCsvText);
   document.getElementById('btnClearAllPoints').addEventListener('click', clearAllPoints);
 }
 
@@ -1116,12 +1143,43 @@ function updateMapGpsMarker() {
   }
 }
 
-function recenterMap() {
+// 現在地に移動
+function moveToCurrentPosition() {
   if (State.currentPosition) {
-    map.setView([State.currentPosition.lat, State.currentPosition.lng], 17);
-    showToast('現在地に地図を移動しました');
+    map.setView([State.currentPosition.lat, State.currentPosition.lng], 17, { animate: true });
+    showToast('現在地に移動しました');
   } else {
-    toggleGps();
+    showToast('現在地を取得します...');
+    if (!State.isWatchingGps) {
+      toggleGps();
+    }
+  }
+}
+
+// 既知点に移動
+function moveToKnownPoints() {
+  const pts = State.knownPoints;
+  if (!pts || pts.length === 0) {
+    showToast('既知点がまだ登録されていません');
+    return;
+  }
+
+  // 有効な緯度経度を持つ点のみ抽出
+  const validPts = pts.filter(p => typeof p.lat === 'number' && !isNaN(p.lat));
+  if (validPts.length === 0) {
+    showToast('既知点の座標データが見つかりません');
+    return;
+  }
+
+  if (validPts.length === 1) {
+    // 1点のみの場合はその点にズーム
+    map.setView([validPts[0].lat, validPts[0].lng], 17, { animate: true });
+    showToast(`既知点「${validPts[0].name}」に移動しました`);
+  } else {
+    // 複数点ある場合は全既知点が画面にぴったり収まる範囲にフィット
+    const bounds = L.latLngBounds(validPts.map(p => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18, animate: true });
+    showToast(`登録された全既知点(${validPts.length}点)の全体を表示しました`);
   }
 }
 
@@ -1202,7 +1260,7 @@ function renderKnownPoints() {
 
 // グローバルスコープ公開 (HTMLインラインonclick用)
 window.focusPoint = (lat, lng) => {
-  map.setView([lat, lng], 17);
+  map.setView([lat, lng], 18, { animate: true });
   document.getElementById('bottomBar').classList.remove('expanded');
   document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
 };
@@ -1430,16 +1488,10 @@ function handleCsvImport() {
   reader.readAsText(file);
 }
 
-function handleCsvExport() {
-  if (State.knownPoints.length === 0) {
-    alert('エクスポートする既知点がありません。');
-    return;
-  }
-
+function generateCsvContent() {
   const isSur = State.isSurveyAxis;
-  const header = isSur ? "X(北),Y(東),H(標高),点名,系\n" : "X(東),Y(北),H(標高),点名,系\n";
-
-  let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header;
+  const header = isSur ? "X(北),Y(東),H(標高),点名,系\r\n" : "X(東),Y(北),H(標高),点名,系\r\n";
+  let content = header;
   State.knownPoints.forEach((pt, i) => {
     const row = [
       pt.x,
@@ -1448,32 +1500,124 @@ function handleCsvExport() {
       `"${(pt.name || `点 #${i+1}`).replace(/"/g, '""')}"`,
       pt.zoneId || State.currentZoneId
     ].join(',');
-    csvContent += row + "\n";
+    content += row + "\r\n";
   });
+  return content;
+}
 
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  const dateStr = new Date().toISOString().slice(0,10);
-  link.setAttribute("download", `survey_points_${dateStr}_${isSur ? 'survey' : 'math'}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast('CSVファイルをダウンロードしました');
+async function handleCsvExport() {
+  if (State.knownPoints.length === 0) {
+    alert('エクスポートする既知点がありません。');
+    return;
+  }
+
+  const isSur = State.isSurveyAxis;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `survey_points_${dateStr}_${isSur ? 'survey' : 'math'}.csv`;
+  const rawCsv = generateCsvContent();
+
+  // UTF-8 BOM付きBlobを生成 (ExcelやiOSでの文字化け防止)
+  const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+  const blob = new Blob([bom, rawCsv], { type: 'text/csv;charset=utf-8' });
+
+  // iPhone / iPad (Safari) 対策: Web Share API が使える場合は iOS の標準共有シートを開く
+  // これにより「"ファイル" に保存」や「メモ」「AirDrop」等で確実に保存可能
+  if (navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: 'text/csv' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: '測量既知点データ',
+          text: `${filename} (${State.knownPoints.length}件)`
+        });
+        showToast('共有・保存メニューを開きました');
+        return;
+      }
+    } catch (shareErr) {
+      // ユーザーが共有をキャンセルした場合は何もしない
+      if (shareErr.name === 'AbortError') return;
+      console.warn('Web Share failed, fallback to download link:', shareErr);
+    }
+  }
+
+  // フォールバック: Blob URL によるダウンロード
+  try {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.target = "_blank";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 500);
+    showToast('CSVファイルを保存しました');
+  } catch (dlErr) {
+    console.error('Download failed:', dlErr);
+    // 万一どちらも失敗した場合はクリップボードにコピー
+    handleCopyCsvText();
+  }
+}
+
+async function handleCopyCsvText() {
+  if (State.knownPoints.length === 0) {
+    alert('コピーする既知点がありません。');
+    return;
+  }
+  const rawCsv = generateCsvContent();
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(rawCsv);
+      showToast('CSVテキストをクリップボードにコピーしました！メモ帳等に貼付できます');
+      return;
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
+    }
+  }
+
+  // クリップボードAPIが使えない場合のフォールバック（iOS古いブラウザ等）
+  const ta = document.createElement('textarea');
+  ta.value = rawCsv;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('CSVテキストをクリップボードにコピーしました！');
+  } catch (err) {
+    alert('自動コピーに失敗しました。以下のテキストを長押ししてコピーしてください:\n\n' + rawCsv);
+  }
+  document.body.removeChild(ta);
 }
 
 // --- 9. ローカルストレージ保存 ---
 function savePoints() {
-  localStorage.setItem('survey_known_points', JSON.stringify(State.knownPoints));
+  try {
+    localStorage.setItem('survey_known_points', JSON.stringify(State.knownPoints));
+  } catch (e) {
+    console.warn('LocalStorage save failed (iOS private mode, etc.):', e);
+    showToast('※端末保存に失敗しました(プライベートブラウズ等をご確認ください)');
+  }
 }
 
 function saveSettings() {
-  const settings = {
-    zoneId: State.currentZoneId,
-    autoZone: State.autoZone,
-    isSurveyAxis: State.isSurveyAxis
-  };
-  localStorage.setItem('survey_app_settings', JSON.stringify(settings));
+  try {
+    const settings = {
+      zoneId: State.currentZoneId,
+      autoZone: State.autoZone,
+      isSurveyAxis: State.isSurveyAxis
+    };
+    localStorage.setItem('survey_app_settings', JSON.stringify(settings));
+  } catch (e) {
+    console.warn('LocalStorage settings save failed:', e);
+  }
 }
 
 function loadSettingsAndPoints() {
