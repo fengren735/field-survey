@@ -65,6 +65,15 @@
       z-index: 1;
     }
 
+    /* バイリニア補間を解除: タイル拡大時にぼやけず、ドット・輪郭をくっきりシャープにする */
+    .leaflet-tile,
+    .leaflet-tile-container img {
+      image-rendering: -webkit-optimize-contrast !important; /* Safari / WebKit */
+      image-rendering: crisp-edges !important;               /* Standard / Firefox */
+      image-rendering: pixelated !important;                 /* Chrome / iOS Safari modern */
+      -ms-interpolation-mode: nearest-neighbor !important;   /* IE/Edge */
+    }
+
     /* Custom attribution badge */
     .attribution-badge {
       position: absolute;
@@ -541,6 +550,8 @@
 
   <!-- Quick Floating Controls (Top Left) -->
   <div class="top-controls">
+    <button class="btn-icon-map" id="btnZoomIn" title="拡大" style="font-size:22px; font-weight:bold;">＋</button>
+    <button class="btn-icon-map" id="btnZoomOut" title="縮小" style="font-size:22px; font-weight:bold;">−</button>
     <button class="btn-icon-map" id="btnRecenter" title="現在地に移動">🎯</button>
     <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
   </div>
@@ -890,24 +901,26 @@ async function fetchGsiElevation(lat, lon) {
 const map = L.map('map', {
   zoomControl: false,
   attributionControl: false, // 右上に自前で配置
-  maxZoom: 22 // タイル限界を超えて数メートル単位までドアップ拡大可能に
+  maxZoom: 26, // ズームレベル26（1pxあたり数ミリ単位）まで極限拡大
+  zoomSnap: 0.5, // 0.5刻みでより柔軟に拡大可能
+  zoomDelta: 1
 }).setView([35.681236, 139.767125], 14); // デフォルト東京駅
 
-// タイルレイヤー (maxNativeZoom: 18 でタイル画像を取得し、maxZoom: 22 まで引き伸ばし拡大)
+// タイルレイヤー (maxNativeZoom: 18 でタイル画像を取得し、maxZoom: 26 まで引き伸ばし拡大)
 const tileLayers = {
   std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
     maxNativeZoom: 18,
-    maxZoom: 22,
+    maxZoom: 26,
     attribution: '国土地理院'
   }),
   pale: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
     maxNativeZoom: 18,
-    maxZoom: 22,
+    maxZoom: 26,
     attribution: '国土地理院'
   }),
   photo: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
     maxNativeZoom: 18,
-    maxZoom: 22,
+    maxZoom: 26,
     attribution: '国土地理院'
   })
 };
@@ -1016,6 +1029,16 @@ function initUi() {
     item.addEventListener('click', () => {
       activateTab(item.getAttribute('data-tab'));
     });
+  });
+
+  // ズームボタン
+  document.getElementById('btnZoomIn').addEventListener('click', () => {
+    map.zoomIn();
+    showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
+  });
+  document.getElementById('btnZoomOut').addEventListener('click', () => {
+    map.zoomOut();
+    showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
   });
 
   // 移動ボタン
@@ -1221,7 +1244,8 @@ function updateMapGpsMarker() {
 // 現在地に移動
 function moveToCurrentPosition() {
   if (State.currentPosition) {
-    map.setView([State.currentPosition.lat, State.currentPosition.lng], 17, { animate: true });
+    const targetZoom = Math.max(map.getZoom(), 19);
+    map.setView([State.currentPosition.lat, State.currentPosition.lng], targetZoom, { animate: true });
     showToast('現在地に移動しました');
   } else {
     showToast('現在地を取得します...');
