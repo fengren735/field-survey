@@ -549,7 +549,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.1 (DXF数学系)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.2</span>
     </div>
   </div>
 
@@ -648,15 +648,23 @@
 
         <!-- Tab 2: CSV Import/Export -->
         <div class="tab-panel" id="tab-csv">
-          <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569;">
-            <b>📋 CSVフォーマット仕様</b><br>
-            1列目: <b>X</b>, 2列目: <b>Y</b>, 3列目: <b>H</b> (任意: 4列目に点名)<br>
+          <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569; line-height:1.5;">
+            <b>📋 既知点CSVフォーマット仕様</b><br>
+            1列目: <b>点名</b>, 2列目: <b>X</b>, 3列目: <b>Y</b>, 4列目: <b>Z(標高)</b><br>
             ※ヘッダー行の有無は自動判別します。<br>
-            ※現在の軸設定「<span class="axis-mode-text">測量系</span>」として解釈されます。
+            ※下で指定した座標系（測量系または数学系）として読み込まれます。
           </div>
 
           <div class="form-group">
-            <label class="form-label">CSVファイルを選択</label>
+            <label class="form-label">CSVの座標系（XYの割り当て）</label>
+            <select id="csvAxisSelect" class="select-box" style="font-size:12px; font-weight:600;">
+              <option value="survey">🌐 測量座標系 (2列目X=北, 3列目Y=東)</option>
+              <option value="math">📐 数学座標系 (2列目X=東, 3列目Y=北)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">CSVファイルを選択 (.csv)</label>
             <input type="file" id="csvFileInput" accept=".csv,text/csv,text/plain" class="input-text">
           </div>
 
@@ -761,7 +769,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.1 (DXF数学系)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.2</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1163,6 +1171,14 @@ function initUi() {
   document.getElementById('btnFetchElevForModal').addEventListener('click', fetchElevForModal);
 
   // CSV
+  document.getElementById('csvAxisSelect').addEventListener('change', (e) => {
+    State.isSurveyAxis = (e.target.value === 'survey');
+    updateAxisLabels();
+    updateCoordinateDisplays();
+    renderKnownPoints();
+    saveSettings();
+    showToast(`既知点座標軸を「${State.isSurveyAxis ? '測量系 (X=北, Y=東)' : '数学系 (X=東, Y=北)'}」に切替`);
+  });
   document.getElementById('btnImportCsv').addEventListener('click', handleCsvImport);
   document.getElementById('btnExportCsv').addEventListener('click', handleCsvExport);
   document.getElementById('btnCopyCsvText').addEventListener('click', handleCopyCsvText);
@@ -1196,9 +1212,12 @@ function activateTab(tabId) {
 
 function updateAxisLabels() {
   const isSur = State.isSurveyAxis;
-  const modeName = isSur ? "測量系 (1列目X=北, 2列目Y=東)" : "数学系 (1列目X=東, 2列目Y=北)";
+  const modeName = isSur ? "測量系 (X=北, Y=東)" : "数学系 (X=東, Y=北)";
   document.getElementById('axisModeLabel').textContent = modeName;
   document.querySelectorAll('.axis-mode-text').forEach(el => el.textContent = isSur ? '測量系' : '数学系');
+
+  const csvSel = document.getElementById('csvAxisSelect');
+  if (csvSel) csvSel.value = isSur ? 'survey' : 'math';
 
   const zone = JGD_ZONES.find(z => z.id === State.currentZoneId);
   const dxfZoneEl = document.getElementById('dxfCurrentZoneLabel');
@@ -1648,7 +1667,7 @@ function renderDxfEntities(shouldZoom = false) {
     }
     State.dxfLayers[layerName].push(ent);
 
-    // 1. 直線 (LINE)
+    // 1. 直線 (LINE) - interactive: false で地図タップを阻害しない
     if (ent.type === 'LINE' && ent.vertices && ent.vertices.length >= 2) {
       const p1 = xyToLatLng(ent.vertices[0].x, ent.vertices[0].y, zoneId, isSur);
       const p2 = xyToLatLng(ent.vertices[1].x, ent.vertices[1].y, zoneId, isSur);
@@ -1656,9 +1675,9 @@ function renderDxfEntities(shouldZoom = false) {
         const line = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
           color: color,
           weight: weight,
-          opacity: 0.85
+          opacity: 0.85,
+          interactive: false // DXF情報を出さず、地図タップ地点(標高・座標)を優先
         });
-        line.bindPopup(`<div style="font-size:11px;"><b>CAD LINE</b><br>画層: ${layerName}</div>`);
         dxfLayerGroup.addLayer(line);
         lineCount++;
       }
@@ -1675,10 +1694,9 @@ function renderDxfEntities(shouldZoom = false) {
       if (latlngs.length >= 2) {
         const isClosed = ent.shape === true || (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
         const poly = isClosed
-          ? L.polygon(latlngs, { color: color, weight: weight, fillOpacity: 0.1, fillColor: color })
-          : L.polyline(latlngs, { color: color, weight: weight, opacity: 0.85 });
+          ? L.polygon(latlngs, { color: color, weight: weight, fillOpacity: 0.1, fillColor: color, interactive: false })
+          : L.polyline(latlngs, { color: color, weight: weight, opacity: 0.85, interactive: false });
 
-        poly.bindPopup(`<div style="font-size:11px;"><b>CAD 折れ線/画地</b><br>画層: ${layerName}<br>頂点数: ${latlngs.length}</div>`);
         dxfLayerGroup.addLayer(poly);
         polyCount++;
       }
@@ -1693,9 +1711,9 @@ function renderDxfEntities(shouldZoom = false) {
           color: color,
           fillColor: '#ffffff',
           fillOpacity: 1,
-          weight: 2
+          weight: 2,
+          interactive: false
         });
-        marker.bindPopup(`<div style="font-size:11px;"><b>CAD POINT</b><br>画層: ${layerName}<br>X: ${formatCoord(ent.position.x, 3)}<br>Y: ${formatCoord(ent.position.y, 3)}</div>`);
         dxfLayerGroup.addLayer(marker);
         pointCount++;
       }
@@ -1708,10 +1726,10 @@ function renderDxfEntities(shouldZoom = false) {
       if (ll && ent.text) {
         const textIcon = L.divIcon({
           className: 'dxf-text-icon',
-          html: `<div style="color:${color}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white;">${ent.text}</div>`,
+          html: `<div style="color:${color}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${ent.text}</div>`,
           iconAnchor: [0, 10]
         });
-        const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon });
+        const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon, interactive: false });
         dxfLayerGroup.addLayer(textMarker);
         textCount++;
       }
@@ -1947,24 +1965,46 @@ function handleCsvImport() {
       const newPoints = [];
 
       lines.forEach((line, lineIdx) => {
-        // カンマまたはタブ区切り
         const cols = line.split(/[,\t]/).map(c => c.trim().replace(/^["']|["']$/g, ''));
         if (cols.length < 2) return;
 
-        // 1列目, 2列目が数値かチェック (ヘッダー行スキップ)
-        const v1 = parseFloat(cols[0]);
-        const v2 = parseFloat(cols[1]);
-        if (isNaN(v1) || isNaN(v2)) return; // ヘッダーと判断
+        let ptName = '';
+        let xVal = NaN;
+        let yVal = NaN;
+        let zVal = null;
 
-        const v3 = cols.length >= 3 && cols[2] !== '' ? parseFloat(cols[2]) : null;
-        const v4Name = cols.length >= 4 ? cols[3] : `CSV点-${State.knownPoints.length + importedCount + 1}`;
+        // パターンA (標準): 1列目: 点名, 2列目: X, 3列目: Y, 4列目: Z
+        if (isNaN(parseFloat(cols[0])) && !isNaN(parseFloat(cols[1])) && !isNaN(parseFloat(cols[2]))) {
+          ptName = cols[0];
+          xVal = parseFloat(cols[1]);
+          yVal = parseFloat(cols[2]);
+          if (cols.length >= 4 && cols[3] !== '' && !isNaN(parseFloat(cols[3]))) {
+            zVal = parseFloat(cols[3]);
+          }
+        }
+        // パターンB (旧形式 / 1列目が数値): 1列目: X, 2列目: Y, 3列目: Z, 4列目: 点名
+        else if (!isNaN(parseFloat(cols[0])) && !isNaN(parseFloat(cols[1]))) {
+          xVal = parseFloat(cols[0]);
+          yVal = parseFloat(cols[1]);
+          if (cols.length >= 3 && cols[2] !== '' && !isNaN(parseFloat(cols[2]))) {
+            zVal = parseFloat(cols[2]);
+          }
+          if (cols.length >= 4 && cols[3] !== '') {
+            ptName = cols[3];
+          } else {
+            ptName = `点-${State.knownPoints.length + importedCount + 1}`;
+          }
+        } else {
+          // ヘッダー行 (例: 点名, X, Y, Z など) はスキップ
+          return;
+        }
 
         newPoints.push({
           id: 'pt_' + Date.now() + '_' + lineIdx,
-          name: v4Name,
-          x: v1, // 1項目X
-          y: v2, // 2項目Y
-          h: !isNaN(v3) ? v3 : null, // 3項目H
+          name: ptName || `点-${State.knownPoints.length + importedCount + 1}`,
+          x: xVal,
+          y: yVal,
+          h: zVal,
           zoneId: State.currentZoneId,
           isSurveySaved: State.isSurveyAxis
         });
@@ -1972,7 +2012,7 @@ function handleCsvImport() {
       });
 
       if (importedCount === 0) {
-        alert('有効な数値データ（1列目:X, 2列目:Y）が見つかりませんでした。');
+        alert('有効な既知点データ（点名, X, Y, Z）が見つかりませんでした。\nフォーマットをご確認ください。');
         return;
       }
 
@@ -1980,7 +2020,7 @@ function handleCsvImport() {
       savePoints();
       renderKnownPoints();
       fileInput.value = '';
-      showToast(`${importedCount}件の既知点をインポートしました`);
+      showToast(`${importedCount}件の既知点(点名,X,Y,Z)をインポートしました`);
       activateTab('tab-points');
     } catch (err) {
       console.error(err);
@@ -1993,14 +2033,15 @@ function handleCsvImport() {
 
 function generateCsvContent() {
   const isSur = State.isSurveyAxis;
-  const header = isSur ? "X(北),Y(東),H(標高),点名,系\r\n" : "X(東),Y(北),H(標高),点名,系\r\n";
+  // フォーマット: 点名, X, Y, Z(標高), 系
+  const header = isSur ? "点名,X(北),Y(東),Z(標高),系\r\n" : "点名,X(東),Y(北),Z(標高),系\r\n";
   let content = header;
   State.knownPoints.forEach((pt, i) => {
     const row = [
+      `"${(pt.name || `点 #${i+1}`).replace(/"/g, '""')}"`,
       pt.x,
       pt.y,
-      pt.h !== null ? pt.h : '',
-      `"${(pt.name || `点 #${i+1}`).replace(/"/g, '""')}"`,
+      pt.h !== null && pt.h !== undefined ? pt.h : '',
       pt.zoneId || State.currentZoneId
     ].join(',');
     content += row + "\r\n";
