@@ -158,35 +158,70 @@
     .summary-card {
       background: white;
       border-radius: 12px;
-      padding: 8px 12px;
+      padding: 10px 12px;
       border: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      align-items: center;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       margin-bottom: 8px;
+      cursor: pointer;
+      user-select: none;
     }
 
-    .coord-item {
+    .summary-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 4px;
+      border-bottom: 1px dashed var(--border);
+      font-size: 11px;
+    }
+
+    .badge-label {
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .coord-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .coord-cell {
       display: flex;
       align-items: baseline;
-      gap: 6px;
-      font-size: 13px;
-      line-height: 1.4;
+      gap: 5px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .coord-label {
-      font-size: 11px;
+
+    .coord-cell-label {
+      font-size: 10px;
       font-weight: 700;
       color: var(--text-muted);
-      min-width: 44px;
+      min-width: 32px;
     }
-    .coord-value {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    .coord-val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       font-weight: 600;
       color: var(--text);
+      font-size: 12px;
     }
-    .coord-h {
+
+    .coord-h-val {
       color: var(--primary-dark);
+      font-weight: 700;
     }
 
     .main-actions-grid {
@@ -515,23 +550,40 @@
     <div class="bottom-bar" id="bottomBar">
       <div class="pull-handle" id="pullHandle" title="タップまたはスワイプで展開"></div>
 
-      <!-- Quick Coordinate Summary Card -->
-      <div class="summary-card">
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <div class="coord-item">
-            <span class="coord-label">現在地:</span>
-            <span class="coord-value" id="dispLatLng">測位待機中...</span>
+      <!-- Quick Coordinate Summary Card (Clean Pro Layout) -->
+      <div class="summary-card" id="summaryCard">
+        <!-- Row 1: LatLng & Detail Indicator -->
+        <div class="summary-header">
+          <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
+            <span class="badge-label" id="dispZoneBadge">第IX系</span>
+            <span class="coord-val" id="dispLatLng" style="font-size:11px;">測位待機中...</span>
           </div>
-          <div class="coord-item">
-            <span class="coord-label" id="dispZoneLabel">平直(IX系):</span>
-            <span class="coord-value" id="dispXY">X: --- , Y: ---</span>
+          <span style="font-size:10px; color:var(--primary); font-weight:700; white-space:nowrap;" id="btnToggleSheet">詳細 ▾</span>
+        </div>
+
+        <!-- Row 2: Projected XY (2 columns) -->
+        <div class="coord-grid">
+          <div class="coord-cell">
+            <span class="coord-cell-label" id="dispLabelX">X(北):</span>
+            <span class="coord-val" id="dispValX">---</span>
           </div>
-          <div class="coord-item">
-            <span class="coord-label">標高 H:</span>
-            <span class="coord-value coord-h" id="dispH">地理院: --- / GPS: ---</span>
+          <div class="coord-cell">
+            <span class="coord-cell-label" id="dispLabelY">Y(東):</span>
+            <span class="coord-val" id="dispValY">---</span>
           </div>
         </div>
-        <button class="btn btn-secondary btn-sm" id="btnToggleSheet" style="height:100%;">詳細 ▾</button>
+
+        <!-- Row 3: Elevation (2 columns: GSI vs GPS) -->
+        <div class="coord-grid" style="border-top:1px solid #f1f5f9; padding-top:4px;">
+          <div class="coord-cell">
+            <span class="coord-cell-label" style="min-width:42px;">地理院H:</span>
+            <span class="coord-val coord-h-val" id="dispHGsi">---</span>
+          </div>
+          <div class="coord-cell">
+            <span class="coord-cell-label" style="min-width:38px;">GPS H:</span>
+            <span class="coord-val" id="dispHGps">---</span>
+          </div>
+        </div>
       </div>
 
       <!-- Quick Move Buttons (Jump to Current Pos / Known Points) -->
@@ -944,7 +996,11 @@ function initUi() {
     document.getElementById('btnToggleSheet').textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
   };
   document.getElementById('pullHandle').addEventListener('click', toggleSheet);
-  document.getElementById('btnToggleSheet').addEventListener('click', toggleSheet);
+  document.getElementById('btnToggleSheet').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSheet();
+  });
+  document.getElementById('summaryCard').addEventListener('click', toggleSheet);
   document.getElementById('btnOpenSheet').addEventListener('click', () => {
     bottomBar.classList.add('expanded');
     document.getElementById('btnToggleSheet').textContent = '閉じる ▴';
@@ -990,6 +1046,9 @@ function updateAxisLabels() {
   const modeName = isSur ? "測量系 (1列目X=北, 2列目Y=東)" : "数学系 (1列目X=東, 2列目Y=北)";
   document.getElementById('axisModeLabel').textContent = modeName;
   document.querySelectorAll('.axis-mode-text').forEach(el => el.textContent = isSur ? '測量系' : '数学系');
+
+  document.getElementById('dispLabelX').textContent = isSur ? "X(北):" : "X(東):";
+  document.getElementById('dispLabelY').textContent = isSur ? "Y(東):" : "Y(北):";
 
   document.getElementById('modalLabelX').textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
   document.getElementById('modalLabelY').textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
@@ -1099,26 +1158,38 @@ function updateCoordinateDisplays() {
   const isSur = State.isSurveyAxis;
   const zone = JGD_ZONES.find(z => z.id === State.currentZoneId);
 
-  document.getElementById('dispZoneLabel').textContent = `平直(${zone ? zone.name : ''}):`;
+  // 系バッジの更新
+  const zoneBadge = document.getElementById('dispZoneBadge');
+  if (zoneBadge && zone) {
+    zoneBadge.textContent = zone.name;
+  }
 
   if (!p) return;
 
-  document.getElementById('dispLatLng').textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}° (±${Math.round(p.accuracy)}m)`;
+  // 緯度経度 + 精度
+  const accText = typeof p.accuracy === 'number' ? ` (±${Math.round(p.accuracy)}m)` : '';
+  document.getElementById('dispLatLng').textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}°${accText}`;
 
+  // 平面直角座標 X / Y
   const dispX = isSur ? p.surveyX : p.mathX;
   const dispY = isSur ? p.surveyY : p.mathY;
-  document.getElementById('dispXY').textContent = `X: ${dispX.toFixed(3)}m , Y: ${dispY.toFixed(3)}m`;
 
-  // 国土地理院標高とGPS高度を両方表示
-  let gsiText = p.gsiH !== null && typeof p.gsiH === 'number'
-    ? `${p.gsiH.toFixed(2)}m`
-    : '---';
+  document.getElementById('dispValX').textContent = `${dispX.toFixed(3)} m`;
+  document.getElementById('dispValY').textContent = `${dispY.toFixed(3)} m`;
 
-  let gpsText = p.gpsH !== null && typeof p.gpsH === 'number'
-    ? `${p.gpsH.toFixed(1)}m`
-    : '---';
+  // 国土地理院標高
+  if (p.gsiH !== null && typeof p.gsiH === 'number') {
+    document.getElementById('dispHGsi').textContent = `${p.gsiH.toFixed(2)} m`;
+  } else {
+    document.getElementById('dispHGsi').textContent = `---`;
+  }
 
-  document.getElementById('dispH').innerHTML = `地理院: <b>${gsiText}</b> &nbsp;|&nbsp; GPS: <b>${gpsText}</b>`;
+  // GPS高度
+  if (p.gpsH !== null && typeof p.gpsH === 'number') {
+    document.getElementById('dispHGps').textContent = `${p.gpsH.toFixed(1)} m`;
+  } else {
+    document.getElementById('dispHGps').textContent = `---`;
+  }
 }
 
 function updateMapGpsMarker() {
