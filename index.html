@@ -887,11 +887,16 @@ function xyToLatLng(input1, input2, zoneId, isSurvey) {
   }
 }
 
-// 国土地理院 標高API取得 (JSON)
+// 国土地理院 標高API取得 (JSON) - タイムアウト4秒付き
 async function fetchGsiElevation(lat, lon) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
   try {
     const url = `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lat=${lat}&lon=${lon}&outtype=JSON`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error('APIレスポンスエラー');
     const data = await res.json();
     if (data && typeof data.elevation === 'number') {
@@ -899,9 +904,15 @@ async function fetchGsiElevation(lat, lon) {
         h: data.elevation,
         src: data.hsrc || '地理院DEM'
       };
+    } else if (data && !isNaN(parseFloat(data.elevation))) {
+      return {
+        h: parseFloat(data.elevation),
+        src: data.hsrc || '地理院DEM'
+      };
     }
   } catch (err) {
-    console.warn('標高API取得失敗 (フォールバック待機):', err);
+    clearTimeout(timeoutId);
+    console.warn('標高API取得エラー:', err);
   }
   return null;
 }
@@ -1759,57 +1770,58 @@ map.on('click', async (e) => {
   const x = isSur ? xy.surveyX : xy.mathX;
   const y = isSur ? xy.surveyY : xy.mathY;
 
-  const popupContent = `
-    <div style="font-size:12px; line-height:1.6; min-width:180px;">
-      <b style="color:var(--primary); font-size:13px;">📍 地図タップ地点</b><br>
-      <div style="font-family:monospace; margin:4px 0;">
-        緯度経度: ${lat.toFixed(6)}°, ${lng.toFixed(6)}°<br>
-        X: ${formatCoord(x, 3)} m<br>
-        Y: ${formatCoord(y, 3)} m<br>
-        標高(T.P.): <b id="tapPopupElev" style="color:#0369a1;">取得中...</b>
-      </div>
-      <button class="btn btn-primary btn-sm" style="margin-top:6px; width:100%;" id="btnTapAddPoint">
-        この地点を既知点に追加
-      </button>
+  // DOMを直接生成して参照を保持 (ID重複バグを完全防止)
+  const container = document.createElement('div');
+  container.style.fontSize = '12px';
+  container.style.lineHeight = '1.6';
+  container.style.minWidth = '180px';
+
+  container.innerHTML = `
+    <b style="color:var(--primary); font-size:13px;">📍 地図タップ地点</b><br>
+    <div style="font-family:monospace; margin:4px 0;">
+      緯度経度: ${lat.toFixed(6)}°, ${lng.toFixed(6)}°<br>
+      X: ${formatCoord(x, 3)} m<br>
+      Y: ${formatCoord(y, 3)} m<br>
+      標高(T.P.): <b class="popup-elev-text" style="color:#0369a1;">取得中...</b>
     </div>
+    <button class="btn btn-primary btn-sm btn-tap-add" style="margin-top:6px; width:100%;">
+      この地点を既知点に追加
+    </button>
   `;
+
+  const elevTextEl = container.querySelector('.popup-elev-text');
+  const btnAdd = container.querySelector('.btn-tap-add');
 
   const popup = L.popup()
     .setLatLng(e.latlng)
-    .setContent(popupContent)
+    .setContent(container)
     .openOn(map);
 
-  // 国土地理院標高APIを非同期取得
   let tappedElev = null;
-  try {
-    const elevRes = await fetchGsiElevation(lat, lng);
-    const elevEl = document.getElementById('tapPopupElev');
-    if (elevRes && typeof elevRes.h === 'number') {
-      tappedElev = elevRes.h;
-      if (elevEl) {
-        elevEl.textContent = `${formatCoord(elevRes.h, 2)} m (${elevRes.src})`;
-      }
-    } else {
-      if (elevEl) elevEl.textContent = '--- (データなし)';
-    }
-  } catch (err) {
-    const elevEl = document.getElementById('tapPopupElev');
-    if (elevEl) elevEl.textContent = '取得失敗';
-  }
 
   // ボタン押下イベント
-  const btnAdd = document.getElementById('btnTapAddPoint');
-  if (btnAdd) {
-    btnAdd.onclick = () => {
-      map.closePopup();
-      openKnownModal();
-      document.getElementById('modalCoordX').value = x.toFixed(3);
-      document.getElementById('modalCoordY').value = y.toFixed(3);
-      document.getElementById('modalZone').value = State.currentZoneId;
-      if (tappedElev !== null) {
-        document.getElementById('modalCoordH').value = Number(tappedElev).toFixed(3);
-      }
-    };
+  btnAdd.onclick = () => {
+    map.closePopup();
+    openKnownModal();
+    document.getElementById('modalCoordX').value = x.toFixed(3);
+    document.getElementById('modalCoordY').value = y.toFixed(3);
+    document.getElementById('modalZone').value = State.currentZoneId;
+    if (tappedElev !== null) {
+      document.getElementById('modalCoordH').value = Number(tappedElev).toFixed(3);
+    }
+  };
+
+  // 国土地理院標高APIを非同期取得
+  try {
+    const elevRes = await fetchGsiElevation(lat, lng);
+    if (elevRes && typeof elevRes.h === 'number') {
+      tappedElev = elevRes.h;
+      elevTextEl.textContent = `${formatCoord(elevRes.h, 2)} m (${elevRes.src})`;
+    } else {
+      elevTextEl.textContent = '--- (データなし)';
+    }
+  } catch (err) {
+    elevTextEl.textContent = '取得失敗';
   }
 });
 
