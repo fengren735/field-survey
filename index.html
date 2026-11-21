@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>測量マップ - 国土地理院地図＆平面直角座標</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Proj4js for Coordinate Transformation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --primary-light: #e0f2fe;
+      --accent: #f59e0b;
+      --danger: #ef4444;
+      --success: #10b981;
+      --bg: #f8fafc;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --card-bg: rgba(255, 255, 255, 0.95);
+      --border: #e2e8f0;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+      --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.15);
+      --safe-bottom: env(safe-area-inset-bottom, 12px);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "BIZ UDPGothic", Meiryo, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Map container */
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Custom attribution badge */
+    .attribution-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(4px);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #334155;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid rgba(0,0,0,0.08);
+      pointer-events: auto;
+    }
+    .attribution-badge a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    /* Top Left Quick Controls */
+    .top-controls {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-icon-map {
+      background: white;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-md);
+      cursor: pointer;
+      font-size: 18px;
+      color: #334155;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-icon-map:active {
+      transform: scale(0.95);
+      background: #f1f5f9;
+    }
+
+    /* Bottom Controller & Panels */
+    .bottom-wrapper {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      z-index: 1001;
+      display: flex;
+      flex-direction: column;
+      pointer-events: none;
+    }
+
+    .bottom-bar {
+      pointer-events: auto;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      border-radius: 18px 18px 0 0;
+      box-shadow: var(--shadow-lg);
+      padding: 10px 14px calc(var(--safe-bottom) + 8px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Handle for pull up */
+    .pull-handle {
+      width: 40px;
+      height: 4px;
+      background: #cbd5e1;
+      border-radius: 2px;
+      margin: 0 auto 8px auto;
+      cursor: pointer;
+    }
+
+    /* Summary bar (always visible at bottom) */
+    .summary-card {
+      background: white;
+      border-radius: 12px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .coord-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .coord-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      min-width: 44px;
+    }
+    .coord-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .coord-h {
+      color: var(--primary-dark);
+    }
+
+    .main-actions-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+      text-align: center;
+      user-select: none;
+    }
+    .btn:active {
+      transform: scale(0.97);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);
+    }
+    .btn-primary.active {
+      background: #0284c7;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #334155;
+      border-color: #cbd5e1;
+    }
+    .btn-accent {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-danger {
+      background: #fee2e2;
+      color: var(--danger);
+      border-color: #fca5a5;
+    }
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    /* Expandable Sheet Content */
+    .sheet-content {
+      overflow-y: auto;
+      max-height: 0;
+      opacity: 0;
+      transition: max-height 0.35s ease, opacity 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bottom-bar.expanded .sheet-content {
+      max-height: 60vh;
+      opacity: 1;
+      padding-top: 8px;
+    }
+
+    /* Sub Tabs inside Sheet */
+    .tab-bar {
+      display: flex;
+      background: #f1f5f9;
+      padding: 3px;
+      border-radius: 8px;
+      gap: 4px;
+    }
+    .tab-item {
+      flex: 1;
+      text-align: center;
+      padding: 7px 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-item.active {
+      background: white;
+      color: var(--primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab-panel {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tab-panel.active {
+      display: flex;
+    }
+
+    /* Form & Inputs */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .input-text, .select-box {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      background: white;
+      color: var(--text);
+      outline: none;
+    }
+    .input-text:focus, .select-box:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-light);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .form-row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* Toggle Switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8fafc;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .toggle-title {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .toggle-desc {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    /* Known Points Table/List */
+    .point-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .point-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .point-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .point-name {
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .point-coords {
+      font-family: monospace;
+      font-size: 11px;
+      color: #475569;
+    }
+    .point-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    /* Modal for Edit */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-card {
+      background: white;
+      width: 100%;
+      max-width: 360px;
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-lg);
+    }
+    .modal-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    /* Notification toast */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-50px);
+      background: #1e293b;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      z-index: 3000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-md);
+      max-width: 90%;
+      text-align: center;
+    }
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* GPS pulsing marker */
+    .gps-marker-icon {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      background: #0284c7;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(2, 132, 199, 0.8);
+    }
+    .gps-pulse {
+      position: absolute;
+      top: -6px;
+      left: -6px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(2, 132, 199, 0.4);
+      animation: pulse-ring 2s infinite ease-out;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    /* Known point marker */
+    .known-marker-icon {
+      background: #ef4444;
+      color: white;
+      border: 2px solid white;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Custom Attribution at Top-Right Corner -->
+  <div class="attribution-badge">
+    地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
+  </div>
+
+  <!-- Quick Floating Controls (Top Left) -->
+  <div class="top-controls">
+    <button class="btn-icon-map" id="btnRecenter" title="現在地に移動">🎯</button>
+    <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
+  </div>
+
+  <!-- Bottom Wrapper -->
+  <div class="bottom-wrapper">
+    <div class="bottom-bar" id="bottomBar">
+      <div class="pull-handle" id="pullHandle" title="タップまたはスワイプで展開"></div>
+
+      <!-- Quick Coordinate Summary Card -->
+      <div class="summary-card">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <div class="coord-item">
+            <span class="coord-label">現在地:</span>
+            <span class="coord-value" id="dispLatLng">測位待機中...</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label" id="dispZoneLabel">平直(IX系):</span>
+            <span class="coord-value" id="dispXY">X: --- , Y: ---</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">標高 H:</span>
+            <span class="coord-value coord-h" id="dispH">--- m</span>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btnToggleSheet" style="height:100%;">詳細 ▾</button>
+      </div>
+
+      <!-- Primary Action Buttons (Thumb friendly) -->
+      <div class="main-actions-grid">
+        <button class="btn btn-primary" id="btnGps">
+          <span id="gpsIcon">📍</span> <span id="gpsText">GPS測位開始</span>
+        </button>
+        <button class="btn btn-secondary" id="btnAddKnownModal">
+          ＋ 既知点追加
+        </button>
+        <button class="btn btn-secondary" id="btnOpenSheet">
+          📁 既知点一覧
+        </button>
+      </div>
+
+      <!-- Expandable Sheet Content -->
+      <div class="sheet-content" id="sheetContent">
+        <!-- Tabs -->
+        <div class="tab-bar">
+          <div class="tab-item active" data-tab="tab-points">既知点一覧 (<span id="knownCount">0</span>)</div>
+          <div class="tab-item" data-tab="tab-csv">CSV取込 / 出力</div>
+          <div class="tab-item" data-tab="tab-settings">系・軸設定</div>
+        </div>
+
+        <!-- Tab 1: Known Points List -->
+        <div class="tab-panel active" id="tab-points">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:12px; color:var(--text-muted);">登録済み測量点</span>
+            <button class="btn btn-danger btn-sm" id="btnClearAllPoints">全消去</button>
+          </div>
+          <div class="point-list" id="pointListContainer">
+            <div style="text-align:center; padding:15px; color:var(--text-muted); font-size:12px;">既知点はまだ登録されていません</div>
+          </div>
+        </div>
+
+        <!-- Tab 2: CSV Import/Export -->
+        <div class="tab-panel" id="tab-csv">
+          <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569;">
+            <b>📋 CSVフォーマット仕様</b><br>
+            1列目: <b>X</b>, 2列目: <b>Y</b>, 3列目: <b>H</b> (任意: 4列目に点名)<br>
+            ※ヘッダー行の有無は自動判別します。<br>
+            ※現在の軸設定「<span class="axis-mode-text">測量系</span>」として解釈されます。
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">CSVファイルを選択</label>
+            <input type="file" id="csvFileInput" accept=".csv,text/csv,text/plain" class="input-text">
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <button class="btn btn-primary btn-sm" id="btnImportCsv">📥 CSVインポート</button>
+            <button class="btn btn-secondary btn-sm" id="btnExportCsv">📤 CSVエクスポート</button>
+          </div>
+        </div>
+
+        <!-- Tab 3: System & Axis Settings -->
+        <div class="tab-panel" id="tab-settings">
+          <div class="form-group">
+            <label class="form-label">平面直角座標系（世界測地系 JGD2011/2000）</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="selectZone" class="select-box">
+                <!-- 1〜19系 -->
+              </select>
+            </div>
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px; margin-top:4px;">
+              <input type="checkbox" id="chkAutoZone" checked> 緯度経度から系を自動判定する
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">XY軸の入れ替え（測量系 ⇔ 数学系）</div>
+              <div class="toggle-desc">
+                現在: <b id="axisModeLabel">測量系 (1列目X=北, 2列目Y=東)</b>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btnSwapAxis">軸を反転</button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">標高（H）の取得方法</label>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">
+              現在地取得時、国土地理院の標高APIより高精度な地表面DEM標高を取得します。APIが応答しない場合は端末のGPS高度を表示します。
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Add/Edit Point -->
+  <div class="modal-overlay" id="pointModal">
+    <div class="modal-card">
+      <div class="modal-title" id="modalTitle">既知点の追加</div>
+
+      <input type="hidden" id="editPointId">
+
+      <div class="form-group">
+        <label class="form-label">点名 (任意)</label>
+        <input type="text" id="modalPointName" class="input-text" placeholder="例: No.1, K-01">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" id="modalLabelX">X座標 (m)</label>
+          <input type="number" step="0.001" id="modalCoordX" class="input-text" placeholder="0.000">
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="modalLabelY">Y座標 (m)</label>
+          <input type="number" step="0.001" id="modalCoordY" class="input-text" placeholder="0.000">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">標高 H (m)</label>
+          <input type="number" step="0.001" id="modalCoordH" class="input-text" placeholder="0.000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">適用系</label>
+          <select id="modalZone" class="select-box">
+            <!-- 1〜19系 -->
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-secondary btn-sm" id="btnFillCurrentPos" style="flex:1;">📍 現在地から入力</button>
+        <button class="btn btn-secondary btn-sm" id="btnFetchElevForModal" style="flex:1;">⛰️ 標高API取得</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
+        <button class="btn btn-secondary" id="btnCancelModal">キャンセル</button>
+        <button class="btn btn-primary" id="btnSavePoint">保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">メッセージ</div>
+</div>
+
+<script>
+/**
+ * 測量マップ アプリケーション
+ * - 国土地理院タイル (標準・白地図・写真)
+ * - JGD2011 / JGD2000 平面直角座標系 I〜XIX系 相互変換
+ * - 系の自動判定
+ * - 国土地理院 標高API連携
+ * - 既知点管理 (CSV入出力、画面追加・編集、測量系/数学系切替)
+ */
+
+// --- 1. 平面直角座標系 (第I系〜第XIX系) 定義テーブル ---
+const JGD_ZONES = [
+  { id: 1,  name: "第I系",   lon0: 129.500000, lat0: 33.0, desc: "長崎県・佐賀県・福岡県の一部" },
+  { id: 2,  name: "第II系",  lon0: 131.000000, lat0: 33.0, desc: "福岡・佐賀・熊本・大分・宮崎・鹿児島" },
+  { id: 3,  name: "第III系", lon0: 132.166667, lat0: 36.0, desc: "山口県・島根県・広島県" },
+  { id: 4,  name: "第IV系",  lon0: 133.500000, lat0: 33.0, desc: "香川県・愛媛県・徳島県・高知県" },
+  { id: 5,  name: "第V系",   lon0: 134.333333, lat0: 36.0, desc: "兵庫県・鳥取県・岡山県" },
+  { id: 6,  name: "第VI系",  lon0: 136.000000, lat0: 36.0, desc: "京都・大阪・福井・滋賀・三重・奈良・和歌山" },
+  { id: 7,  name: "第VII系", lon0: 137.166667, lat0: 36.0, desc: "石川県・富山県・岐阜県・愛知県" },
+  { id: 8,  name: "第VIII系",lon0: 138.500000, lat0: 36.0, desc: "新潟県・長野県・山梨県・静岡県" },
+  { id: 9,  name: "第IX系",  lon0: 139.833333, lat0: 36.0, desc: "東京・福島・栃木・茨城・埼玉・千葉・群馬・神奈川" },
+  { id: 10, name: "第X系",   lon0: 140.833333, lat0: 40.0, desc: "青森県・秋田県・山形県・岩手県・宮城県" },
+  { id: 11, name: "第XI系",  lon0: 140.250000, lat0: 44.0, desc: "北海道 (小樽・函館等)" },
+  { id: 12, name: "第XII系", lon0: 142.250000, lat0: 44.0, desc: "北海道 (札幌・旭川等)" },
+  { id: 13, name: "第XIII系",lon0: 144.250000, lat0: 44.0, desc: "北海道 (釧路・北見・帯広等)" },
+  { id: 14, name: "第XIV系", lon0: 142.000000, lat0: 26.0, desc: "小笠原諸島" },
+  { id: 15, name: "第XV系",  lon0: 127.500000, lat0: 26.0, desc: "沖縄本島・周辺諸島" },
+  { id: 16, name: "第XVI系", lon0: 124.000000, lat0: 26.0, desc: "先島諸島 (宮古・石垣等)" },
+  { id: 17, name: "第XVII系",lon0: 131.000000, lat0: 26.0, desc: "大東諸島" },
+  { id: 18, name: "第XVIII系",lon0: 136.000000, lat0: 20.0, desc: "沖ノ鳥島" },
+  { id: 19, name: "第XIX系", lon0: 154.000000, lat0: 26.0, desc: "南鳥島" }
+];
+
+// Proj4に各系のEPSGコード/Proj文字列を登録 (JGD2011)
+JGD_ZONES.forEach(z => {
+  const epsgCode = 6668 + z.id; // EPSG:6669 (第I系) 〜 6687 (第XIX系)
+  const projStr = `+proj=tmerc +lat_0=${z.lat0} +lon_0=${z.lon0} +k=0.9999 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs`;
+  proj4.defs(`EPSG:${epsgCode}`, projStr);
+  proj4.defs(`JGD_ZONE_${z.id}`, projStr);
+});
+
+// --- 2. 状態管理 ---
+const State = {
+  currentZoneId: 9, // デフォルト: 9系 (東京周辺)
+  autoZone: true,
+  isSurveyAxis: true, // true: 測量系(X:北, Y:東), false: 数学系(X:東, Y:北)
+  currentPosition: null, // { lat, lng, x, y, h, acc, hAccuracy, src }
+  isWatchingGps: false,
+  watchId: null,
+  knownPoints: [], // [{ id, name, x, y, h, zoneId, lat, lng }]
+  activeLayer: 'std' // std, pale, photo
+};
+
+// --- 3. ユーティリティ関数 ---
+function showToast(text) {
+  const t = document.getElementById('toast');
+  t.innerText = text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// 緯度経度から適切な平面直角座標系を自動推定
+function detectZoneFromLatLng(lat, lon) {
+  // 南方諸島・沖縄等の特異地域判定
+  if (lat < 24.5 && lon > 150.0) return 19; // 南鳥島
+  if (lat < 22.0 && lon > 134.0 && lon < 138.0) return 18; // 沖ノ鳥島
+  if (lat < 27.5 && lon > 140.0) return 14; // 小笠原諸島
+  if (lat < 27.0 && lon > 130.0 && lon < 133.0) return 17; // 大東諸島
+  if (lat < 25.5 && lon < 126.0) return 16; // 八重山・宮古
+  if (lat < 28.5 && lon >= 126.0 && lon < 130.0) return 15; // 沖縄本島
+
+  // 北海道 (lat >= 41.3)
+  if (lat >= 41.3) {
+    if (lon < 141.25) return 11;
+    if (lon < 143.25) return 12;
+    return 13;
+  }
+
+  // 本州・四国・九州: 中央経線への最近傍判定
+  const mainZones = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  let bestZone = 9;
+  let minDiff = 999;
+  for (const zid of mainZones) {
+    const z = JGD_ZONES.find(item => item.id === zid);
+    const diff = Math.abs(lon - z.lon0);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestZone = zid;
+    }
+  }
+  return bestZone;
+}
+
+// 緯度経度 -> 平面直角座標 (X, Y: 測量系 X=北, Y=東)
+function latLngToXY(lat, lon, zoneId) {
+  try {
+    // proj4 returns [X(East), Y(North)] in mathematical projection
+    const p = proj4('EPSG:4326', `JGD_ZONE_${zoneId}`, [lon, lat]);
+    return {
+      surveyX: p[1], // 北向き (X)
+      surveyY: p[0], // 東向き (Y)
+      mathX: p[0],   // 横 (X)
+      mathY: p[1]    // 縦 (Y)
+    };
+  } catch (e) {
+    console.error('Coordinate conversion failed:', e);
+    return null;
+  }
+}
+
+// 平面直角座標 (測量系 or 数学系) -> 緯度経度
+function xyToLatLng(input1, input2, zoneId, isSurvey) {
+  try {
+    // proj4 expects [East, North]
+    const east = isSurvey ? input2 : input1;
+    const north = isSurvey ? input1 : input2;
+    const p = proj4(`JGD_ZONE_${zoneId}`, 'EPSG:4326', [east, north]);
+    return {
+      lat: p[1],
+      lng: p[0]
+    };
+  } catch (e) {
+    console.error('Inverse conversion failed:', e);
+    return null;
+  }
+}
+
+// 国土地理院 標高API取得 (JSON)
+async function fetchGsiElevation(lat, lon) {
+  try {
+    const url = `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lat=${lat}&lon=${lon}&outtype=JSON`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('APIレスポンスエラー');
+    const data = await res.json();
+    if (data && typeof data.elevation === 'number') {
+      return {
+        h: data.elevation,
+        src: data.hsrc || '地理院DEM'
+      };
+    }
+  } catch (err) {
+    console.warn('標高API取得失敗 (フォールバック待機):', err);
+  }
+  return null;
+}
+
+// --- 4. 地図初期化 (Leaflet + 国土地理院タイル) ---
+const map = L.map('map', {
+  zoomControl: false,
+  attributionControl: false // 右上に自前で配置
+}).setView([35.681236, 139.767125], 14); // デフォルト東京駅
+
+// タイルレイヤー
+const tileLayers = {
+  std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '国土地理院'
+  }),
+  pale: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '国土地理院'
+  }),
+  photo: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+    maxZoom: 18,
+    attribution: '国土地理院'
+  })
+};
+
+tileLayers.std.addTo(map);
+
+// レイヤー切り替えトグル
+const layerOrder = ['std', 'pale', 'photo'];
+const layerNames = { std: '標準地図', pale: '白地図/淡色', photo: '航空写真' };
+document.getElementById('btnToggleLayers').addEventListener('click', () => {
+  const currentIdx = layerOrder.indexOf(State.activeLayer);
+  const nextIdx = (currentIdx + 1) % layerOrder.length;
+  const nextLayerKey = layerOrder[nextIdx];
+
+  map.removeLayer(tileLayers[State.activeLayer]);
+  tileLayers[nextLayerKey].addTo(map);
+  State.activeLayer = nextLayerKey;
+  showToast(`地図を「${layerNames[nextLayerKey]}」に変更`);
+});
+
+// GPSマーカー & 誤差円
+let gpsMarker = null;
+let gpsCircle = null;
+const knownMarkerGroup = L.layerGroup().addTo(map);
+
+// --- 5. UIの初期化とイベント設定 ---
+function initUi() {
+  // 系のセレクトボックスを生成
+  const selZone = document.getElementById('selectZone');
+  const modalZone = document.getElementById('modalZone');
+  JGD_ZONES.forEach(z => {
+    const opt1 = document.createElement('option');
+    opt1.value = z.id;
+    opt1.textContent = `${z.name} (${z.desc})`;
+    selZone.appendChild(opt1);
+
+    const opt2 = document.createElement('option');
+    opt2.value = z.id;
+    opt2.textContent = `${z.name} (${z.desc})`;
+    modalZone.appendChild(opt2);
+  });
+
+  selZone.value = State.currentZoneId;
+  modalZone.value = State.currentZoneId;
+
+  // ローカルストレージ復元
+  loadSettingsAndPoints();
+  updateAxisLabels();
+  renderKnownPoints();
+
+  // イベントリスナー登録
+  selZone.addEventListener('change', (e) => {
+    State.currentZoneId = parseInt(e.target.value, 10);
+    modalZone.value = State.currentZoneId;
+    document.getElementById('chkAutoZone').checked = false;
+    State.autoZone = false;
+    updateCoordinateDisplays();
+    renderKnownPoints();
+    saveSettings();
+  });
+
+  document.getElementById('chkAutoZone').addEventListener('change', (e) => {
+    State.autoZone = e.target.checked;
+    if (State.autoZone && State.currentPosition) {
+      const autoZ = detectZoneFromLatLng(State.currentPosition.lat, State.currentPosition.lng);
+      if (autoZ !== State.currentZoneId) {
+        State.currentZoneId = autoZ;
+        selZone.value = autoZ;
+        modalZone.value = autoZ;
+      }
+    }
+    updateCoordinateDisplays();
+    saveSettings();
+  });
+
+  document.getElementById('btnSwapAxis').addEventListener('click', () => {
+    State.isSurveyAxis = !State.isSurveyAxis;
+    updateAxisLabels();
+    updateCoordinateDisplays();
+    renderKnownPoints();
+    saveSettings();
+    showToast(`軸を「${State.isSurveyAxis ? '測量系 (X=北, Y=東)' : '数学系 (X=東, Y=北)'}」に切替`);
+  });
+
+  // ボトムバー展開/収納
+  const bottomBar = document.getElementById('bottomBar');
+  const toggleSheet = () => {
+    bottomBar.classList.toggle('expanded');
+    const isExpanded = bottomBar.classList.contains('expanded');
+    document.getElementById('btnToggleSheet').textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
+  };
+  document.getElementById('pullHandle').addEventListener('click', toggleSheet);
+  document.getElementById('btnToggleSheet').addEventListener('click', toggleSheet);
+  document.getElementById('btnOpenSheet').addEventListener('click', () => {
+    bottomBar.classList.add('expanded');
+    document.getElementById('btnToggleSheet').textContent = '閉じる ▴';
+    activateTab('tab-points');
+  });
+
+  // タブ切り替え
+  document.querySelectorAll('.tab-item').forEach(item => {
+    item.addEventListener('click', () => {
+      activateTab(item.getAttribute('data-tab'));
+    });
+  });
+
+  // GPSボタン
+  document.getElementById('btnGps').addEventListener('click', toggleGps);
+  document.getElementById('btnRecenter').addEventListener('click', recenterMap);
+
+  // 既知点モーダル
+  document.getElementById('btnAddKnownModal').addEventListener('click', () => openKnownModal());
+  document.getElementById('btnCancelModal').addEventListener('click', () => closeModal());
+  document.getElementById('btnSavePoint').addEventListener('click', savePointFromModal);
+  document.getElementById('btnFillCurrentPos').addEventListener('click', fillModalWithCurrentPos);
+  document.getElementById('btnFetchElevForModal').addEventListener('click', fetchElevForModal);
+
+  // CSV
+  document.getElementById('btnImportCsv').addEventListener('click', handleCsvImport);
+  document.getElementById('btnExportCsv').addEventListener('click', handleCsvExport);
+  document.getElementById('btnClearAllPoints').addEventListener('click', clearAllPoints);
+}
+
+function activateTab(tabId) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === tabId));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === tabId));
+}
+
+function updateAxisLabels() {
+  const isSur = State.isSurveyAxis;
+  const modeName = isSur ? "測量系 (1列目X=北, 2列目Y=東)" : "数学系 (1列目X=東, 2列目Y=北)";
+  document.getElementById('axisModeLabel').textContent = modeName;
+  document.querySelectorAll('.axis-mode-text').forEach(el => el.textContent = isSur ? '測量系' : '数学系');
+
+  document.getElementById('modalLabelX').textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
+  document.getElementById('modalLabelY').textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
+}
+
+// --- 6. GPS位置測位 ---
+function toggleGps() {
+  if (State.isWatchingGps) {
+    // 停止
+    if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
+    State.isWatchingGps = false;
+    State.watchId = null;
+    document.getElementById('gpsIcon').textContent = '📍';
+    document.getElementById('gpsText').textContent = 'GPS測位開始';
+    document.getElementById('btnGps').classList.remove('active');
+    showToast('GPS測位を停止しました');
+  } else {
+    // 開始
+    if (!navigator.geolocation) {
+      alert('お使いの端末・ブラウザはGeolocationに対応していません。');
+      return;
+    }
+    showToast('現在地を取得中...');
+    document.getElementById('gpsText').textContent = '測位中 (追従ON)';
+    document.getElementById('btnGps').classList.add('active');
+    State.isWatchingGps = true;
+
+    State.watchId = navigator.geolocation.watchPosition(
+      onGpsSuccess,
+      onGpsError,
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+    );
+  }
+}
+
+async function onGpsSuccess(pos) {
+  const { latitude, longitude, altitude, accuracy, altitudeAccuracy } = pos.coords;
+
+  // 系の自動判定
+  if (State.autoZone) {
+    const autoZ = detectZoneFromLatLng(latitude, longitude);
+    if (autoZ !== State.currentZoneId) {
+      State.currentZoneId = autoZ;
+      document.getElementById('selectZone').value = autoZ;
+      document.getElementById('modalZone').value = autoZ;
+      showToast(`緯度経度から「${JGD_ZONES.find(z => z.id === autoZ).name}」を自動選択`);
+    }
+  }
+
+  // 平面直角座標変換
+  const xy = latLngToXY(latitude, longitude, State.currentZoneId);
+
+  // 標高取得 (国土地理院API優先、無ければGPS altitude)
+  let elev = null;
+  let elevSrc = 'GPS端末';
+  if (typeof altitude === 'number' && !isNaN(altitude)) {
+    elev = altitude;
+  }
+
+  // 地理院標高APIを非同期取得 (前回の座標から少し動いた時のみ問い合わせてサーバー負荷軽減)
+  const shouldFetchApi = !State.currentPosition ||
+    (Math.abs(State.currentPosition.lat - latitude) > 0.0001 || Math.abs(State.currentPosition.lng - longitude) > 0.0001);
+
+  if (shouldFetchApi) {
+    const apiRes = await fetchGsiElevation(latitude, longitude);
+    if (apiRes) {
+      elev = apiRes.h;
+      elevSrc = apiRes.src;
+    }
+  } else if (State.currentPosition && State.currentPosition.src.includes('地理院')) {
+    elev = State.currentPosition.h;
+    elevSrc = State.currentPosition.src;
+  }
+
+  State.currentPosition = {
+    lat: latitude,
+    lng: longitude,
+    accuracy: accuracy,
+    surveyX: xy.surveyX,
+    surveyY: xy.surveyY,
+    mathX: xy.mathX,
+    mathY: xy.mathY,
+    h: elev,
+    src: elevSrc
+  };
+
+  updateCoordinateDisplays();
+  updateMapGpsMarker();
+}
+
+function onGpsError(err) {
+  console.error('GPSエラー:', err);
+  let msg = '位置情報を取得できませんでした。';
+  if (err.code === 1) msg = '位置情報の利用が許可されていません。';
+  if (err.code === 2) msg = '位置を特定できませんでした。';
+  if (err.code === 3) msg = '位置情報の取得がタイムアウトしました。';
+  showToast(msg);
+}
+
+function updateCoordinateDisplays() {
+  const p = State.currentPosition;
+  const isSur = State.isSurveyAxis;
+  const zone = JGD_ZONES.find(z => z.id === State.currentZoneId);
+
+  document.getElementById('dispZoneLabel').textContent = `平直(${zone ? zone.name : ''}):`;
+
+  if (!p) return;
+
+  document.getElementById('dispLatLng').textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}° (±${Math.round(p.accuracy)}m)`;
+
+  const dispX = isSur ? p.surveyX : p.mathX;
+  const dispY = isSur ? p.surveyY : p.mathY;
+  document.getElementById('dispXY').textContent = `X: ${dispX.toFixed(3)}m , Y: ${dispY.toFixed(3)}m`;
+
+  if (p.h !== null && typeof p.h === 'number') {
+    document.getElementById('dispH').textContent = `${p.h.toFixed(2)} m (${p.src})`;
+  } else {
+    document.getElementById('dispH').textContent = `--- (取得中)`;
+  }
+}
+
+function updateMapGpsMarker() {
+  if (!State.currentPosition) return;
+  const { lat, lng, accuracy } = State.currentPosition;
+
+  if (!gpsMarker) {
+    const pulseIcon = L.divIcon({
+      className: 'gps-marker-container',
+      html: '<div class="gps-pulse"></div><div class="gps-marker-icon"></div>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+    gpsMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(map);
+    gpsCircle = L.circle([lat, lng], { radius: accuracy, color: '#0284c7', weight: 1, fillOpacity: 0.15 }).addTo(map);
+
+    map.setView([lat, lng], 17);
+  } else {
+    gpsMarker.setLatLng([lat, lng]);
+    gpsCircle.setLatLng([lat, lng]);
+    gpsCircle.setRadius(accuracy);
+  }
+}
+
+function recenterMap() {
+  if (State.currentPosition) {
+    map.setView([State.currentPosition.lat, State.currentPosition.lng], 17);
+    showToast('現在地に地図を移動しました');
+  } else {
+    toggleGps();
+  }
+}
+
+// --- 7. 既知点の追加・編集・表示 ---
+function renderKnownPoints() {
+  knownMarkerGroup.clearLayers();
+  const container = document.getElementById('pointListContainer');
+  container.innerHTML = '';
+
+  const pts = State.knownPoints;
+  document.getElementById('knownCount').textContent = pts.length;
+
+  if (pts.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted); font-size:12px;">既知点はまだ登録されていません</div>';
+    return;
+  }
+
+  const isSur = State.isSurveyAxis;
+
+  pts.forEach((pt, idx) => {
+    // 平面直角座標から緯度経度を再計算 (各点の保存系に基づく)
+    const latlng = xyToLatLng(pt.x, pt.y, pt.zoneId || State.currentZoneId, pt.isSurveySaved !== undefined ? pt.isSurveySaved : isSur);
+    pt.lat = latlng.lat;
+    pt.lng = latlng.lng;
+
+    // マーカー生成
+    const ptIcon = L.divIcon({
+      className: 'known-marker-container',
+      html: `<div class="known-marker-icon">${idx + 1}</div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
+
+    const marker = L.marker([pt.lat, pt.lng], { icon: ptIcon });
+
+    // ポップアップ内容
+    const zoneName = JGD_ZONES.find(z => z.id === (pt.zoneId || State.currentZoneId))?.name || '';
+    const popupHtml = `
+      <div style="font-size:12px; min-width:160px;">
+        <b style="color:#0284c7; font-size:13px;">${pt.name || `点 #${idx+1}`}</b><br>
+        <div style="font-family:monospace; margin:4px 0;">
+          X: ${Number(pt.x).toFixed(3)} m<br>
+          Y: ${Number(pt.y).toFixed(3)} m<br>
+          H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? Number(pt.h).toFixed(3) + ' m' : '---'}
+        </div>
+        <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
+        <div style="margin-top:6px; display:flex; gap:4px;">
+          <button onclick="window.editPoint('${pt.id}')" style="flex:1; padding:3px 6px; font-size:11px; cursor:pointer;">編集</button>
+          <button onclick="window.deletePoint('${pt.id}')" style="color:#ef4444; padding:3px 6px; font-size:11px; cursor:pointer;">削除</button>
+        </div>
+      </div>
+    `;
+    marker.bindPopup(popupHtml);
+    marker.addTo(knownMarkerGroup);
+
+    // リストカード生成
+    const card = document.createElement('div');
+    card.className = 'point-card';
+    card.innerHTML = `
+      <div class="point-info">
+        <div class="point-name">
+          <span style="background:#e0f2fe; color:#0369a1; border-radius:4px; padding:1px 5px; font-size:10px;">#${idx+1}</span>
+          ${pt.name || `既知点 ${idx+1}`}
+        </div>
+        <div class="point-coords">
+          X: ${Number(pt.x).toFixed(3)}, Y: ${Number(pt.y).toFixed(3)}${pt.h !== '' && pt.h !== null ? `, H: ${Number(pt.h).toFixed(2)}` : ''}
+        </div>
+      </div>
+      <div class="point-actions">
+        <button class="btn btn-secondary btn-sm" onclick="window.focusPoint(${pt.lat}, ${pt.lng})">表示</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.editPoint('${pt.id}')">編集</button>
+        <button class="btn btn-danger btn-sm" onclick="window.deletePoint('${pt.id}')">×</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// グローバルスコープ公開 (HTMLインラインonclick用)
+window.focusPoint = (lat, lng) => {
+  map.setView([lat, lng], 17);
+  document.getElementById('bottomBar').classList.remove('expanded');
+  document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+};
+
+window.editPoint = (id) => {
+  const pt = State.knownPoints.find(p => p.id === id);
+  if (!pt) return;
+  openKnownModal(pt);
+};
+
+window.deletePoint = (id) => {
+  if (!confirm('この既知点を削除しますか？')) return;
+  State.knownPoints = State.knownPoints.filter(p => p.id !== id);
+  savePoints();
+  renderKnownPoints();
+  showToast('既知点を削除しました');
+};
+
+function clearAllPoints() {
+  if (State.knownPoints.length === 0) return;
+  if (!confirm(`登録済みの既知点 ${State.knownPoints.length} 件をすべて削除しますか？`)) return;
+  State.knownPoints = [];
+  savePoints();
+  renderKnownPoints();
+  showToast('既知点を全消去しました');
+}
+
+// モーダル操作
+function openKnownModal(pt = null) {
+  const modal = document.getElementById('pointModal');
+  const title = document.getElementById('modalTitle');
+  const editId = document.getElementById('editPointId');
+  const pName = document.getElementById('modalPointName');
+  const pX = document.getElementById('modalCoordX');
+  const pY = document.getElementById('modalCoordY');
+  const pH = document.getElementById('modalCoordH');
+  const pZone = document.getElementById('modalZone');
+
+  if (pt) {
+    title.textContent = '既知点の編集';
+    editId.value = pt.id;
+    pName.value = pt.name || '';
+    pX.value = pt.x;
+    pY.value = pt.y;
+    pH.value = pt.h !== null ? pt.h : '';
+    pZone.value = pt.zoneId || State.currentZoneId;
+  } else {
+    title.textContent = '既知点の追加';
+    editId.value = '';
+    pName.value = `点-${State.knownPoints.length + 1}`;
+    pX.value = '';
+    pY.value = '';
+    pH.value = '';
+    pZone.value = State.currentZoneId;
+  }
+
+  updateAxisLabels();
+  modal.classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('pointModal').classList.remove('active');
+}
+
+function fillModalWithCurrentPos() {
+  if (!State.currentPosition) {
+    alert('現在地がまだ測位されていません。先に「GPS測位開始」を押してください。');
+    return;
+  }
+  const isSur = State.isSurveyAxis;
+  const p = State.currentPosition;
+  document.getElementById('modalCoordX').value = (isSur ? p.surveyX : p.mathX).toFixed(3);
+  document.getElementById('modalCoordY').value = (isSur ? p.surveyY : p.mathY).toFixed(3);
+  if (p.h !== null) {
+    document.getElementById('modalCoordH').value = Number(p.h).toFixed(3);
+  }
+  document.getElementById('modalZone').value = State.currentZoneId;
+  showToast('現在地の座標を反映しました');
+}
+
+async function fetchElevForModal() {
+  const xVal = parseFloat(document.getElementById('modalCoordX').value);
+  const yVal = parseFloat(document.getElementById('modalCoordY').value);
+  const zoneId = parseInt(document.getElementById('modalZone').value, 10);
+
+  if (isNaN(xVal) || isNaN(yVal)) {
+    alert('先にX座標とY座標を入力してください。');
+    return;
+  }
+
+  showToast('国土地理院 標高APIを取得中...');
+  const latlng = xyToLatLng(xVal, yVal, zoneId, State.isSurveyAxis);
+  if (!latlng) {
+    alert('座標変換に失敗しました。');
+    return;
+  }
+
+  const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
+  if (elevRes && typeof elevRes.h === 'number') {
+    document.getElementById('modalCoordH').value = elevRes.h.toFixed(3);
+    showToast(`標高を取得しました (${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
+  } else {
+    alert('標高データを取得できませんでした (海洋や海外、またはAPI一時不可)。');
+  }
+}
+
+function savePointFromModal() {
+  const editId = document.getElementById('editPointId').value;
+  const name = document.getElementById('modalPointName').value.trim();
+  const x = parseFloat(document.getElementById('modalCoordX').value);
+  const y = parseFloat(document.getElementById('modalCoordY').value);
+  const hRaw = document.getElementById('modalCoordH').value;
+  const h = hRaw !== '' ? parseFloat(hRaw) : null;
+  const zoneId = parseInt(document.getElementById('modalZone').value, 10);
+
+  if (isNaN(x) || isNaN(y)) {
+    alert('X座標とY座標を正しい数値で入力してください。');
+    return;
+  }
+
+  if (editId) {
+    // 編集
+    const idx = State.knownPoints.findIndex(p => p.id === editId);
+    if (idx !== -1) {
+      State.knownPoints[idx] = {
+        ...State.knownPoints[idx],
+        name: name || `点 #${idx+1}`,
+        x: x,
+        y: y,
+        h: h,
+        zoneId: zoneId,
+        isSurveySaved: State.isSurveyAxis
+      };
+      showToast('既知点を更新しました');
+    }
+  } else {
+    // 新規
+    const newPt = {
+      id: 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      name: name || `点 #${State.knownPoints.length + 1}`,
+      x: x,
+      y: y,
+      h: h,
+      zoneId: zoneId,
+      isSurveySaved: State.isSurveyAxis
+    };
+    State.knownPoints.push(newPt);
+    showToast('既知点を追加しました');
+  }
+
+  savePoints();
+  renderKnownPoints();
+  closeModal();
+}
+
+// --- 8. CSV インポート / エクスポート ---
+function handleCsvImport() {
+  const fileInput = document.getElementById('csvFileInput');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    alert('CSVファイルを選択してください。');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length === 0) {
+        alert('CSVファイルが空です。');
+        return;
+      }
+
+      let importedCount = 0;
+      const newPoints = [];
+
+      lines.forEach((line, lineIdx) => {
+        // カンマまたはタブ区切り
+        const cols = line.split(/[,\t]/).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        if (cols.length < 2) return;
+
+        // 1列目, 2列目が数値かチェック (ヘッダー行スキップ)
+        const v1 = parseFloat(cols[0]);
+        const v2 = parseFloat(cols[1]);
+        if (isNaN(v1) || isNaN(v2)) return; // ヘッダーと判断
+
+        const v3 = cols.length >= 3 && cols[2] !== '' ? parseFloat(cols[2]) : null;
+        const v4Name = cols.length >= 4 ? cols[3] : `CSV点-${State.knownPoints.length + importedCount + 1}`;
+
+        newPoints.push({
+          id: 'pt_' + Date.now() + '_' + lineIdx,
+          name: v4Name,
+          x: v1, // 1項目X
+          y: v2, // 2項目Y
+          h: !isNaN(v3) ? v3 : null, // 3項目H
+          zoneId: State.currentZoneId,
+          isSurveySaved: State.isSurveyAxis
+        });
+        importedCount++;
+      });
+
+      if (importedCount === 0) {
+        alert('有効な数値データ（1列目:X, 2列目:Y）が見つかりませんでした。');
+        return;
+      }
+
+      State.knownPoints = State.knownPoints.concat(newPoints);
+      savePoints();
+      renderKnownPoints();
+      fileInput.value = '';
+      showToast(`${importedCount}件の既知点をインポートしました`);
+      activateTab('tab-points');
+    } catch (err) {
+      console.error(err);
+      alert('CSV読み込み中にエラーが発生しました: ' + err.message);
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function handleCsvExport() {
+  if (State.knownPoints.length === 0) {
+    alert('エクスポートする既知点がありません。');
+    return;
+  }
+
+  const isSur = State.isSurveyAxis;
+  const header = isSur ? "X(北),Y(東),H(標高),点名,系\n" : "X(東),Y(北),H(標高),点名,系\n";
+
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header;
+  State.knownPoints.forEach((pt, i) => {
+    const row = [
+      pt.x,
+      pt.y,
+      pt.h !== null ? pt.h : '',
+      `"${(pt.name || `点 #${i+1}`).replace(/"/g, '""')}"`,
+      pt.zoneId || State.currentZoneId
+    ].join(',');
+    csvContent += row + "\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  const dateStr = new Date().toISOString().slice(0,10);
+  link.setAttribute("download", `survey_points_${dateStr}_${isSur ? 'survey' : 'math'}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('CSVファイルをダウンロードしました');
+}
+
+// --- 9. ローカルストレージ保存 ---
+function savePoints() {
+  localStorage.setItem('survey_known_points', JSON.stringify(State.knownPoints));
+}
+
+function saveSettings() {
+  const settings = {
+    zoneId: State.currentZoneId,
+    autoZone: State.autoZone,
+    isSurveyAxis: State.isSurveyAxis
+  };
+  localStorage.setItem('survey_app_settings', JSON.stringify(settings));
+}
+
+function loadSettingsAndPoints() {
+  try {
+    const pts = localStorage.getItem('survey_known_points');
+    if (pts) State.knownPoints = JSON.parse(pts);
+
+    const set = localStorage.getItem('survey_app_settings');
+    if (set) {
+      const parsed = JSON.parse(set);
+      if (parsed.zoneId) State.currentZoneId = parsed.zoneId;
+      if (typeof parsed.autoZone === 'boolean') State.autoZone = parsed.autoZone;
+      if (typeof parsed.isSurveyAxis === 'boolean') State.isSurveyAxis = parsed.isSurveyAxis;
+
+      document.getElementById('selectZone').value = State.currentZoneId;
+      document.getElementById('modalZone').value = State.currentZoneId;
+      document.getElementById('chkAutoZone').checked = State.autoZone;
+    }
+  } catch (e) {
+    console.error('Failed to load storage:', e);
+  }
+}
+
+// --- 地図クリックで既知点追加モーダルへ座標反映 ---
+map.on('click', (e) => {
+  const { lat, lng } = e.latlng;
+  const xy = latLngToXY(lat, lng, State.currentZoneId);
+  if (!xy) return;
+
+  const isSur = State.isSurveyAxis;
+  const x = isSur ? xy.surveyX : xy.mathX;
+  const y = isSur ? xy.surveyY : xy.mathY;
+
+  // 確認ポップアップ
+  const popup = L.popup()
+    .setLatLng(e.latlng)
+    .setContent(`
+      <div style="font-size:12px; line-height:1.5;">
+        <b>地図タップ地点</b><br>
+        緯度経度: ${lat.toFixed(5)}°, ${lng.toFixed(5)}°<br>
+        X: ${x.toFixed(3)} m<br>
+        Y: ${y.toFixed(3)} m<br>
+        <button class="btn btn-primary btn-sm" style="margin-top:6px; width:100%;" onclick="window.createPointFromTap(${lat}, ${lng}, ${x}, ${y})">
+          この地点を既知点に追加
+        </button>
+      </div>
+    `)
+    .openOn(map);
+});
+
+window.createPointFromTap = async (lat, lng, x, y) => {
+  map.closePopup();
+  openKnownModal();
+  document.getElementById('modalCoordX').value = x.toFixed(3);
+  document.getElementById('modalCoordY').value = y.toFixed(3);
+  document.getElementById('modalZone').value = State.currentZoneId;
+
+  // 標高を自動取得
+  const elevRes = await fetchGsiElevation(lat, lng);
+  if (elevRes && typeof elevRes.h === 'number') {
+    document.getElementById('modalCoordH').value = elevRes.h.toFixed(3);
+  }
+};
+
+// 起動
+window.addEventListener('DOMContentLoaded', initUi);
+</script>
+</body>
+</html>
