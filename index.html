@@ -889,21 +889,25 @@ async function fetchGsiElevation(lat, lon) {
 // --- 4. 地図初期化 (Leaflet + 国土地理院タイル) ---
 const map = L.map('map', {
   zoomControl: false,
-  attributionControl: false // 右上に自前で配置
+  attributionControl: false, // 右上に自前で配置
+  maxZoom: 22 // タイル限界を超えて数メートル単位までドアップ拡大可能に
 }).setView([35.681236, 139.767125], 14); // デフォルト東京駅
 
-// タイルレイヤー
+// タイルレイヤー (maxNativeZoom: 18 でタイル画像を取得し、maxZoom: 22 まで引き伸ばし拡大)
 const tileLayers = {
   std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
-    maxZoom: 18,
+    maxNativeZoom: 18,
+    maxZoom: 22,
     attribution: '国土地理院'
   }),
   pale: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
-    maxZoom: 18,
+    maxNativeZoom: 18,
+    maxZoom: 22,
     attribution: '国土地理院'
   }),
   photo: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-    maxZoom: 18,
+    maxNativeZoom: 18,
+    maxZoom: 22,
     attribution: '国土地理院'
   })
 };
