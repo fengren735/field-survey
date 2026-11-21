@@ -519,7 +519,7 @@
           </div>
           <div class="coord-item">
             <span class="coord-label">標高 H:</span>
-            <span class="coord-value coord-h" id="dispH">--- m</span>
+            <span class="coord-value coord-h" id="dispH">地理院: --- / GPS: ---</span>
           </div>
         </div>
         <button class="btn btn-secondary btn-sm" id="btnToggleSheet" style="height:100%;">詳細 ▾</button>
@@ -1015,26 +1015,28 @@ async function onGpsSuccess(pos) {
   // 平面直角座標変換
   const xy = latLngToXY(latitude, longitude, State.currentZoneId);
 
-  // 標高取得 (国土地理院API優先、無ければGPS altitude)
-  let elev = null;
-  let elevSrc = 'GPS端末';
+  // 1. GPS端末の高度 (altitude)
+  let gpsAltitude = null;
   if (typeof altitude === 'number' && !isNaN(altitude)) {
-    elev = altitude;
+    gpsAltitude = altitude;
   }
 
-  // 地理院標高APIを非同期取得 (前回の座標から少し動いた時のみ問い合わせてサーバー負荷軽減)
+  // 2. 国土地理院 標高API (DEM地表面標高)
+  let gsiElevation = null;
+  let gsiSrc = '';
+
   const shouldFetchApi = !State.currentPosition ||
     (Math.abs(State.currentPosition.lat - latitude) > 0.0001 || Math.abs(State.currentPosition.lng - longitude) > 0.0001);
 
   if (shouldFetchApi) {
     const apiRes = await fetchGsiElevation(latitude, longitude);
     if (apiRes) {
-      elev = apiRes.h;
-      elevSrc = apiRes.src;
+      gsiElevation = apiRes.h;
+      gsiSrc = apiRes.src;
     }
-  } else if (State.currentPosition && State.currentPosition.src.includes('地理院')) {
-    elev = State.currentPosition.h;
-    elevSrc = State.currentPosition.src;
+  } else if (State.currentPosition) {
+    gsiElevation = State.currentPosition.gsiH;
+    gsiSrc = State.currentPosition.gsiSrc;
   }
 
   State.currentPosition = {
@@ -1045,8 +1047,11 @@ async function onGpsSuccess(pos) {
     surveyY: xy.surveyY,
     mathX: xy.mathX,
     mathY: xy.mathY,
-    h: elev,
-    src: elevSrc
+    gpsH: gpsAltitude,
+    gpsHAccuracy: altitudeAccuracy,
+    gsiH: gsiElevation,
+    gsiSrc: gsiSrc,
+    h: gsiElevation !== null ? gsiElevation : gpsAltitude // 既定のH値
   };
 
   updateCoordinateDisplays();
@@ -1077,11 +1082,16 @@ function updateCoordinateDisplays() {
   const dispY = isSur ? p.surveyY : p.mathY;
   document.getElementById('dispXY').textContent = `X: ${dispX.toFixed(3)}m , Y: ${dispY.toFixed(3)}m`;
 
-  if (p.h !== null && typeof p.h === 'number') {
-    document.getElementById('dispH').textContent = `${p.h.toFixed(2)} m (${p.src})`;
-  } else {
-    document.getElementById('dispH').textContent = `--- (取得中)`;
-  }
+  // 国土地理院標高とGPS高度を両方表示
+  let gsiText = p.gsiH !== null && typeof p.gsiH === 'number'
+    ? `${p.gsiH.toFixed(2)}m`
+    : '---';
+
+  let gpsText = p.gpsH !== null && typeof p.gpsH === 'number'
+    ? `${p.gpsH.toFixed(1)}m`
+    : '---';
+
+  document.getElementById('dispH').innerHTML = `地理院: <b>${gsiText}</b> &nbsp;|&nbsp; GPS: <b>${gpsText}</b>`;
 }
 
 function updateMapGpsMarker() {
@@ -1266,11 +1276,15 @@ function fillModalWithCurrentPos() {
   const p = State.currentPosition;
   document.getElementById('modalCoordX').value = (isSur ? p.surveyX : p.mathX).toFixed(3);
   document.getElementById('modalCoordY').value = (isSur ? p.surveyY : p.mathY).toFixed(3);
-  if (p.h !== null) {
-    document.getElementById('modalCoordH').value = Number(p.h).toFixed(3);
+  
+  // 地理院標高を優先、無ければGPS
+  const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
+  if (hVal !== null) {
+    document.getElementById('modalCoordH').value = Number(hVal).toFixed(3);
   }
   document.getElementById('modalZone').value = State.currentZoneId;
-  showToast('現在地の座標を反映しました');
+  const srcName = p.gsiH !== null ? '地理院' : (p.gpsH !== null ? 'GPS' : 'なし');
+  showToast(`現在地を反映 (H: ${srcName})`);
 }
 
 async function fetchElevForModal() {
