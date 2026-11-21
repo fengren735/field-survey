@@ -549,7 +549,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.0 (DXF)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.1 (DXF数学系)</span>
     </div>
   </div>
 
@@ -678,6 +678,17 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label">CADファイルの座標系（XYの割り当て）</label>
+            <select id="dxfAxisSelect" class="select-box" style="font-size:12px; font-weight:600;">
+              <option value="math" selected>📐 数学座標系 (CAD標準: X=東, Y=北)</option>
+              <option value="survey">🌐 測量座標系 (測量CAD: X=北, Y=東)</option>
+            </select>
+            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+              ※一般的なCAD(AutoCAD/Jw_cad等)は「数学座標系(X=東, Y=北)」です。図面が傾いたり反転する場合は切り替えてください。
+            </div>
+          </div>
+
+          <div class="form-group">
             <label class="form-label">DXFファイルを選択 (.dxf)</label>
             <input type="file" id="dxfFileInput" accept=".dxf" class="input-text">
           </div>
@@ -750,7 +761,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.0 (DXF対応)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.1 (DXF数学系)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -868,6 +879,7 @@ const State = {
   dxfRawText: null, // 読み込んだDXFの生テキスト (軸切替時の再計算用)
   dxfData: null, // 解析済みDXFデータ
   dxfLayers: {}, // レイヤー名ごとの管理
+  dxfAxisMode: 'math', // デフォルト: 数学座標系 (X=東, Y=北)
   dxfColor: '#2563eb',
   dxfWeight: 3
 };
@@ -1157,6 +1169,13 @@ function initUi() {
   document.getElementById('btnClearAllPoints').addEventListener('click', clearAllPoints);
 
   // DXF (CAD)
+  document.getElementById('dxfAxisSelect').addEventListener('change', (e) => {
+    State.dxfAxisMode = e.target.value;
+    if (State.dxfData) {
+      renderDxfEntities(true);
+      showToast(`CAD軸を「${State.dxfAxisMode === 'math' ? '数学座標系(X=東,Y=北)' : '測量座標系(X=北,Y=東)'}」に変更して再描画`);
+    }
+  });
   document.getElementById('dxfFileInput').addEventListener('change', handleDxfFileSelect);
   document.getElementById('btnZoomToDxf').addEventListener('click', zoomToDxfBounds);
   document.getElementById('btnClearDxf').addEventListener('click', clearDxfData);
@@ -1611,7 +1630,8 @@ function renderDxfEntities(shouldZoom = false) {
   if (!State.dxfData || !State.dxfData.entities) return;
 
   const entities = State.dxfData.entities;
-  const isSur = State.isSurveyAxis;
+  // DXF専用の座標軸判定 (デフォルト: 数学座標系 X=東, Y=北)
+  const isSur = (State.dxfAxisMode === 'survey');
   const zoneId = State.currentZoneId;
   const color = State.dxfColor;
   const weight = State.dxfWeight;
