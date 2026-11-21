@@ -546,6 +546,9 @@
   <!-- Custom Attribution at Top-Right Corner -->
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
+    <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.4 (16:53)</span>
+    </div>
   </div>
 
   <!-- Quick Floating Controls (Top Left) -->
@@ -692,6 +695,15 @@
             <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">
               現在地取得時、国土地理院の標高APIより高精度な地表面DEM標高を取得します。APIが応答しない場合は端末のGPS高度を表示します。
             </div>
+          </div>
+
+          <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:11px; color:var(--text-muted);">
+              アプリVer: <b id="settingsVerLabel">v1.0.4 (16:53)</b>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
+              🔄 キャッシュ更新
+            </button>
           </div>
         </div>
 
@@ -1051,7 +1063,12 @@ function initUi() {
     });
   });
 
-  // ズームボタン
+  // キャッシュ強制更新ボタン
+  document.getElementById('btnForceReload').addEventListener('click', () => {
+    // キャッシュを回避して最新版を再取得
+    const cleanUrl = window.location.href.split('?')[0];
+    window.location.href = cleanUrl + '?v=' + Date.now();
+  });
   document.getElementById('btnZoomIn').addEventListener('click', () => {
     map.zoomIn();
     showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
@@ -1818,10 +1835,13 @@ map.on('click', async (e) => {
       tappedElev = elevRes.h;
       elevTextEl.textContent = `${formatCoord(elevRes.h, 2)} m (${elevRes.src})`;
     } else {
-      elevTextEl.textContent = '--- (データなし)';
+      elevTextEl.textContent = '--- (データなし/海上等)';
+      elevTextEl.style.color = '#ef4444';
     }
   } catch (err) {
-    elevTextEl.textContent = '取得失敗';
+    console.error('Tap elevation fetch failed:', err);
+    elevTextEl.textContent = `取得失敗 (${err.name || '通信エラー'})`;
+    elevTextEl.style.color = '#ef4444';
   }
 });
 
