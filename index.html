@@ -587,7 +587,7 @@
         <!-- Row 3: Elevation (2 columns: GSI vs GPS) -->
         <div class="coord-grid" style="border-top:1px solid #f1f5f9; padding-top:4px;">
           <div class="coord-cell">
-            <span class="coord-cell-label" style="min-width:42px;">地理院H:</span>
+            <span class="coord-cell-label" style="min-width:52px;">標高(T.P.):</span>
             <span class="coord-val coord-h-val" id="dispHGsi">---</span>
           </div>
           <div class="coord-cell">
@@ -805,6 +805,15 @@ const State = {
 };
 
 // --- 3. ユーティリティ関数 ---
+// 数値の3桁カンマ区切りフォーマット (例: -30208.681 -> -30,208.681)
+function formatCoord(num, decimals = 3) {
+  if (num === null || num === undefined || isNaN(num) || num === '') return '---';
+  return Number(num).toLocaleString('ja-JP', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
 function showToast(text) {
   const t = document.getElementById('toast');
   t.innerText = text;
@@ -1197,12 +1206,12 @@ function updateCoordinateDisplays() {
   const accText = typeof p.accuracy === 'number' ? ` (±${Math.round(p.accuracy)}m)` : '';
   document.getElementById('dispLatLng').textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}°${accText}`;
 
-  // 平面直角座標 X / Y
+  // 平面直角座標 X / Y (1,000刻みカンマフォーマット)
   const dispX = isSur ? p.surveyX : p.mathX;
   const dispY = isSur ? p.surveyY : p.mathY;
 
-  document.getElementById('dispValX').textContent = `${dispX.toFixed(3)} m`;
-  document.getElementById('dispValY').textContent = `${dispY.toFixed(3)} m`;
+  document.getElementById('dispValX').textContent = `${formatCoord(dispX, 3)} m`;
+  document.getElementById('dispValY').textContent = `${formatCoord(dispY, 3)} m`;
 
   // 国土地理院標高
   if (p.gsiH !== null && typeof p.gsiH === 'number') {
@@ -1320,9 +1329,9 @@ function renderKnownPoints() {
       <div style="font-size:12px; min-width:160px;">
         <b style="color:#0284c7; font-size:13px;">${pt.name || `点 #${idx+1}`}</b><br>
         <div style="font-family:monospace; margin:4px 0;">
-          X: ${Number(pt.x).toFixed(3)} m<br>
-          Y: ${Number(pt.y).toFixed(3)} m<br>
-          H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? Number(pt.h).toFixed(3) + ' m' : '---'}
+          X: ${formatCoord(pt.x, 3)} m<br>
+          Y: ${formatCoord(pt.y, 3)} m<br>
+          H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? formatCoord(pt.h, 3) + ' m' : '---'}
         </div>
         <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
         <div style="margin-top:6px; display:flex; gap:4px;">
@@ -1344,7 +1353,7 @@ function renderKnownPoints() {
           ${pt.name || `既知点 ${idx+1}`}
         </div>
         <div class="point-coords">
-          X: ${Number(pt.x).toFixed(3)}, Y: ${Number(pt.y).toFixed(3)}${pt.h !== '' && pt.h !== null ? `, H: ${Number(pt.h).toFixed(2)}` : ''}
+          X: ${formatCoord(pt.x, 3)}, Y: ${formatCoord(pt.y, 3)}${pt.h !== '' && pt.h !== null ? `, H: ${formatCoord(pt.h, 2)}` : ''}
         </div>
       </div>
       <div class="point-actions">
@@ -1741,7 +1750,7 @@ function loadSettingsAndPoints() {
 }
 
 // --- 地図クリックで既知点追加モーダルへ座標反映 ---
-map.on('click', (e) => {
+map.on('click', async (e) => {
   const { lat, lng } = e.latlng;
   const xy = latLngToXY(lat, lng, State.currentZoneId);
   if (!xy) return;
@@ -1750,36 +1759,59 @@ map.on('click', (e) => {
   const x = isSur ? xy.surveyX : xy.mathX;
   const y = isSur ? xy.surveyY : xy.mathY;
 
-  // 確認ポップアップ
+  const popupContent = `
+    <div style="font-size:12px; line-height:1.6; min-width:180px;">
+      <b style="color:var(--primary); font-size:13px;">📍 地図タップ地点</b><br>
+      <div style="font-family:monospace; margin:4px 0;">
+        緯度経度: ${lat.toFixed(6)}°, ${lng.toFixed(6)}°<br>
+        X: ${formatCoord(x, 3)} m<br>
+        Y: ${formatCoord(y, 3)} m<br>
+        標高(T.P.): <b id="tapPopupElev" style="color:#0369a1;">取得中...</b>
+      </div>
+      <button class="btn btn-primary btn-sm" style="margin-top:6px; width:100%;" id="btnTapAddPoint">
+        この地点を既知点に追加
+      </button>
+    </div>
+  `;
+
   const popup = L.popup()
     .setLatLng(e.latlng)
-    .setContent(`
-      <div style="font-size:12px; line-height:1.5;">
-        <b>地図タップ地点</b><br>
-        緯度経度: ${lat.toFixed(5)}°, ${lng.toFixed(5)}°<br>
-        X: ${x.toFixed(3)} m<br>
-        Y: ${y.toFixed(3)} m<br>
-        <button class="btn btn-primary btn-sm" style="margin-top:6px; width:100%;" onclick="window.createPointFromTap(${lat}, ${lng}, ${x}, ${y})">
-          この地点を既知点に追加
-        </button>
-      </div>
-    `)
+    .setContent(popupContent)
     .openOn(map);
-});
 
-window.createPointFromTap = async (lat, lng, x, y) => {
-  map.closePopup();
-  openKnownModal();
-  document.getElementById('modalCoordX').value = x.toFixed(3);
-  document.getElementById('modalCoordY').value = y.toFixed(3);
-  document.getElementById('modalZone').value = State.currentZoneId;
-
-  // 標高を自動取得
-  const elevRes = await fetchGsiElevation(lat, lng);
-  if (elevRes && typeof elevRes.h === 'number') {
-    document.getElementById('modalCoordH').value = elevRes.h.toFixed(3);
+  // 国土地理院標高APIを非同期取得
+  let tappedElev = null;
+  try {
+    const elevRes = await fetchGsiElevation(lat, lng);
+    const elevEl = document.getElementById('tapPopupElev');
+    if (elevRes && typeof elevRes.h === 'number') {
+      tappedElev = elevRes.h;
+      if (elevEl) {
+        elevEl.textContent = `${formatCoord(elevRes.h, 2)} m (${elevRes.src})`;
+      }
+    } else {
+      if (elevEl) elevEl.textContent = '--- (データなし)';
+    }
+  } catch (err) {
+    const elevEl = document.getElementById('tapPopupElev');
+    if (elevEl) elevEl.textContent = '取得失敗';
   }
-};
+
+  // ボタン押下イベント
+  const btnAdd = document.getElementById('btnTapAddPoint');
+  if (btnAdd) {
+    btnAdd.onclick = () => {
+      map.closePopup();
+      openKnownModal();
+      document.getElementById('modalCoordX').value = x.toFixed(3);
+      document.getElementById('modalCoordY').value = y.toFixed(3);
+      document.getElementById('modalZone').value = State.currentZoneId;
+      if (tappedElev !== null) {
+        document.getElementById('modalCoordH').value = Number(tappedElev).toFixed(3);
+      }
+    };
+  }
+});
 
 // 起動
 window.addEventListener('DOMContentLoaded', initUi);
