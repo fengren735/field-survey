@@ -549,7 +549,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.3 (2026/11/21 23:03)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.4 (2026/11/21 23:13)</span>
     </div>
   </div>
 
@@ -681,8 +681,17 @@
         <div class="tab-panel" id="tab-dxf">
           <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569; line-height:1.5;">
             <b>📐 DXF（CAD図面）取込</b><br>
-            測量CAD（AutoCAD / Jw_cad等）のDXFファイル（線・ポリライン・点・文字）を国土地理院地図上に直接展開します。<br>
-            ※現在の適用系「<b id="dxfCurrentZoneLabel">第IX系</b>」・「<span class="axis-mode-text">測量系</span>」で変換されます。
+            測量CAD（AutoCAD / Jw_cad等）のDXFファイル（線・ポリライン・点・文字）を国土地理院地図上に直接展開します。
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">適用する平面直角座標系（世界測地系）</label>
+            <select id="dxfZoneSelect" class="select-box" style="font-size:12px; font-weight:600;">
+              <!-- 1〜19系を自動生成 -->
+            </select>
+            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;" id="dxfZoneHint">
+              ※現在地が特定されていれば自動選択されます。別の地域の図面を読み込む場合は手動で変更してください。
+            </div>
           </div>
 
           <div class="form-group">
@@ -692,7 +701,7 @@
               <option value="survey">🌐 測量座標系 (測量CAD: X=北, Y=東)</option>
             </select>
             <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
-              ※一般的なCAD(AutoCAD/Jw_cad等)は「数学座標系(X=東, Y=北)」です。図面が傾いたり反転する場合は切り替えてください。
+              ※一般的なCAD(AutoCAD/Jw_cad等)は「数学座標系(X=東, Y=北)」です。
             </div>
           </div>
 
@@ -769,7 +778,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.3 (2026/11/21 23:03)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.4 (2026/11/21 23:13)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -887,6 +896,7 @@ const State = {
   dxfRawText: null, // 読み込んだDXFの生テキスト (軸切替時の再計算用)
   dxfData: null, // 解析済みDXFデータ
   dxfLayers: {}, // レイヤー名ごとの管理
+  dxfZoneId: 9, // DXF用の適用系 (デフォルト: 現在地または全体系)
   dxfAxisMode: 'math', // デフォルト: 数学座標系 (X=東, Y=北)
   dxfColor: '#2563eb',
   dxfWeight: 3
@@ -1060,6 +1070,8 @@ function initUi() {
   // 系のセレクトボックスを生成
   const selZone = document.getElementById('selectZone');
   const modalZone = document.getElementById('modalZone');
+  const dxfZone = document.getElementById('dxfZoneSelect');
+
   JGD_ZONES.forEach(z => {
     const opt1 = document.createElement('option');
     opt1.value = z.id;
@@ -1070,10 +1082,17 @@ function initUi() {
     opt2.value = z.id;
     opt2.textContent = `${z.name} (${z.desc})`;
     modalZone.appendChild(opt2);
+
+    const opt3 = document.createElement('option');
+    opt3.value = z.id;
+    opt3.textContent = `${z.name} (${z.desc})`;
+    if (dxfZone) dxfZone.appendChild(opt3);
   });
 
   selZone.value = State.currentZoneId;
   modalZone.value = State.currentZoneId;
+  if (dxfZone) dxfZone.value = State.currentZoneId;
+  State.dxfZoneId = State.currentZoneId;
 
   // ローカルストレージ復元
   loadSettingsAndPoints();
@@ -1185,6 +1204,15 @@ function initUi() {
   document.getElementById('btnClearAllPoints').addEventListener('click', clearAllPoints);
 
   // DXF (CAD)
+  document.getElementById('dxfZoneSelect').addEventListener('change', (e) => {
+    State.dxfZoneId = parseInt(e.target.value, 10);
+    const zObj = JGD_ZONES.find(z => z.id === State.dxfZoneId);
+    showToast(`DXFの適用系を「${zObj ? zObj.name : ''}」に変更`);
+    if (State.dxfData) {
+      renderDxfEntities(true);
+    }
+  });
+
   document.getElementById('dxfAxisSelect').addEventListener('change', (e) => {
     State.dxfAxisMode = e.target.value;
     if (State.dxfData) {
@@ -1275,6 +1303,14 @@ async function onGpsSuccess(pos) {
       State.currentZoneId = autoZ;
       document.getElementById('selectZone').value = autoZ;
       document.getElementById('modalZone').value = autoZ;
+      
+      // DXFの系も現在地に合わせて自動更新
+      const dxfZoneSel = document.getElementById('dxfZoneSelect');
+      if (dxfZoneSel) {
+        dxfZoneSel.value = autoZ;
+        State.dxfZoneId = autoZ;
+      }
+
       showToast(`緯度経度から「${JGD_ZONES.find(z => z.id === autoZ).name}」を自動選択`);
     }
   }
@@ -1651,7 +1687,7 @@ function renderDxfEntities(shouldZoom = false) {
   const entities = State.dxfData.entities;
   // DXF専用の座標軸判定 (デフォルト: 数学座標系 X=東, Y=北)
   const isSur = (State.dxfAxisMode === 'survey');
-  const zoneId = State.currentZoneId;
+  const zoneId = State.dxfZoneId || State.currentZoneId;
   const color = State.dxfColor;
   const weight = State.dxfWeight;
 
