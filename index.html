@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.1 (2026/11/22 12:48)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.2 (2026/11/22 12:55)</span>
     </div>
   </div>
 
@@ -857,7 +857,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.1 (2026/11/22 12:48)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.2 (2026/11/22 12:55)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1689,11 +1689,11 @@ function renderKnownPoints() {
 
 // --- 10. DXF (CAD) 図面の読み込み・描画処理 ---
 
-// バイナリDXF (Binary DXF) パーサー
+// バイナリDXF (Binary DXF - AutoCAD 2000〜2025 / ODA File Converter 完全対応) パーサー
 function parseBinaryDxf(buffer) {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
-  let offset = 22; // ヘッダー "AutoCAD Binary DXF\r\n\x1a\0" (22 bytes) スキップ
+  let offset = 22; // "AutoCAD Binary DXF\r\n\x1a\0" (22 bytes)
 
   const decoderShiftJis = new TextDecoder('shift_jis');
   const decoderUtf8 = new TextDecoder('utf-8');
@@ -1704,7 +1704,7 @@ function parseBinaryDxf(buffer) {
       offset++;
     }
     const strBytes = bytes.subarray(start, offset);
-    if (offset < bytes.length && bytes[offset] === 0) offset++; // 0x00 スキップ
+    if (offset < bytes.length && bytes[offset] === 0) offset++;
 
     let str = decoderUtf8.decode(strBytes);
     if (str.includes('\uFFFD')) {
@@ -1719,27 +1719,31 @@ function parseBinaryDxf(buffer) {
   let inLayerTable = false;
   let currentLayerName = '';
   let currentEntity = null;
+  let currentPolyline = null; // POLYLINE + VERTEX + SEQEND 構造用
 
   while (offset < buffer.byteLength - 2) {
-    // 2バイト符号なし整数 (uint16 little-endian)
     const code = view.getUint16(offset, true);
     offset += 2;
 
     let val = null;
 
-    // グループコードによる型判定
-    if ((code >= 0 && code <= 9) || code === 100 || code === 102 || code === 105 || (code >= 300 && code <= 309) || (code >= 320 && code <= 369) || (code >= 390 && code <= 399) || (code >= 410 && code <= 419) || (code >= 430 && code <= 439) || (code >= 1000 && code <= 1009)) {
+    // グループコードによる型完全判定 (AutoCAD / ODA AC1014〜AC1032完全網羅)
+    if ((code >= 0 && code <= 9) || code === 100 || code === 102 || code === 105 || (code >= 300 && code <= 309) || (code >= 320 && code <= 369) || (code >= 390 && code <= 399) || (code >= 410 && code <= 419) || (code >= 430 && code <= 439) || (code >= 470 && code <= 481) || (code >= 1000 && code <= 1009)) {
       val = readNullTerminatedString();
-    } else if ((code >= 10 && code <= 59) || (code >= 110 && code <= 149) || (code >= 210 && code <= 239) || (code >= 1010 && code <= 1059)) {
+    } else if ((code >= 10 && code <= 59) || (code >= 110 && code <= 149) || (code >= 210 && code <= 239) || (code >= 460 && code <= 469) || (code >= 1010 && code <= 1059)) {
       val = view.getFloat64(offset, true);
       offset += 8;
-    } else if ((code >= 60 && code <= 79) || (code >= 170 && code <= 179) || (code >= 270 && code <= 279) || (code >= 370 && code <= 389) || (code >= 400 && code <= 409) || (code >= 1060 && code <= 1070)) {
+    } else if ((code >= 60 && code <= 79) || (code >= 170 && code <= 179) || (code >= 270 && code <= 289) || (code >= 370 && code <= 389) || (code >= 400 && code <= 409) || (code >= 1060 && code <= 1070)) {
       val = view.getInt16(offset, true);
       offset += 2;
     } else if ((code >= 90 && code <= 99) || (code >= 420 && code <= 429) || (code >= 440 && code <= 459) || code === 1071) {
       val = view.getInt32(offset, true);
       offset += 4;
-    } else if (code >= 280 && code <= 299) {
+    } else if (code >= 160 && code <= 169) {
+      // 64-bit integer (AutoCAD 2013+)
+      offset += 8;
+      val = 0;
+    } else if (code >= 290 && code <= 299) {
       val = view.getUint8(offset);
       offset += 1;
     } else if (code >= 310 && code <= 319) {
@@ -1753,7 +1757,7 @@ function parseBinaryDxf(buffer) {
 
     if (code === 0 && val === 'EOF') break;
 
-    // レイヤーテーブル
+    // レイヤーテーブルの解析
     if (code === 2 && val === 'LAYER') { inLayerTable = true; continue; }
     if (inLayerTable) {
       if (code === 0 && (val === 'ENDTAB' || val === 'ENDSEC')) {
@@ -1772,28 +1776,67 @@ function parseBinaryDxf(buffer) {
       }
     }
 
-    // エンティティ
+    // ENTITIES セクションの解析
     if (code === 2 && val === 'ENTITIES') { inEntities = true; continue; }
     if (inEntities) {
       if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) {
-        if (currentEntity) entities.push(currentEntity);
+        if (currentEntity && currentEntity.type !== 'POLYLINE' && currentEntity.type !== 'VERTEX') {
+          entities.push(currentEntity);
+        }
         currentEntity = null;
         inEntities = false;
         continue;
       }
 
       if (code === 0) {
-        if (currentEntity) entities.push(currentEntity);
-        currentEntity = { type: val, layer: '0', vertices: [] };
+        // 直前のエンティティを登録 (VERTEX/SEQEND以外)
+        if (currentEntity && currentEntity.type !== 'POLYLINE' && currentEntity.type !== 'VERTEX') {
+          entities.push(currentEntity);
+        }
+
+        // 旧式ポリライン (POLYLINE + VERTEX... + SEQEND)
+        if (val === 'POLYLINE') {
+          currentPolyline = { type: 'POLYLINE', layer: '0', vertices: [] };
+          currentEntity = currentPolyline;
+        } else if (val === 'VERTEX') {
+          currentEntity = { type: 'VERTEX', layer: currentPolyline ? currentPolyline.layer : '0' };
+        } else if (val === 'SEQEND') {
+          if (currentPolyline) {
+            entities.push(currentPolyline);
+            currentPolyline = null;
+          }
+          currentEntity = null;
+        } else {
+          currentEntity = { type: val, layer: '0', vertices: [] };
+        }
       } else if (currentEntity) {
-        if (code === 8) currentEntity.layer = val.trim();
-        if (code === 62) currentEntity.colorIndex = Math.abs(val);
-        if (code === 420) currentEntity.color = val;
+        if (code === 8) {
+          currentEntity.layer = val.trim();
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.layer = val.trim();
+          }
+        }
+        if (code === 62) {
+          currentEntity.colorIndex = Math.abs(val);
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.colorIndex = Math.abs(val);
+          }
+        }
+        if (code === 420) {
+          currentEntity.color = val;
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.color = val;
+          }
+        }
+
+        // 座標値 (X, Y)
         if (code === 10) currentEntity.tempX = val;
         if (code === 20) {
           currentEntity.tempY = val;
-          if (currentEntity.type === 'LWPOLYLINE' || currentEntity.type === 'POLYLINE') {
+          if (currentEntity.type === 'LWPOLYLINE') {
             currentEntity.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
+          } else if (currentEntity.type === 'VERTEX' && currentPolyline) {
+            currentPolyline.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
           } else if (currentEntity.type === 'POINT') {
             currentEntity.position = { x: currentEntity.tempX, y: currentEntity.tempY };
           } else if (currentEntity.type === 'TEXT' || currentEntity.type === 'MTEXT') {
@@ -1811,10 +1854,19 @@ function parseBinaryDxf(buffer) {
           }
         }
         if (code === 1) currentEntity.text = val;
-        if (code === 70 && (val === 1 || val === 129)) currentEntity.shape = true; // closed
+        if (code === 70 && (val === 1 || val === 129)) {
+          currentEntity.shape = true; // closed
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.shape = true;
+          }
+        }
       }
     }
   }
+
+  // 終了時に残っているエンティティ
+  if (currentPolyline) entities.push(currentPolyline);
+  else if (currentEntity && currentEntity.type !== 'VERTEX') entities.push(currentEntity);
 
   return {
     entities: entities,
