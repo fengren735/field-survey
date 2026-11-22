@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.2 (2026/11/22 12:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.4 (2026/11/22 13:08)</span>
     </div>
   </div>
 
@@ -822,6 +822,12 @@
               </select>
             </div>
           </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; padding-top:6px; border-top:1px dashed #cbd5e1;">
+            <label style="font-size:11px; display:flex; align-items:center; gap:5px; color:var(--text); font-weight:600; cursor:pointer;">
+              <input type="checkbox" id="chkShowDxfText" checked> 🔤 DXF文字（注記・寸法）を表示
+            </label>
+          </div>
         </div>
 
         <!-- Tab 3: System & Axis Settings -->
@@ -857,7 +863,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.2 (2026/11/22 12:55)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.4 (2026/11/22 13:08)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -977,6 +983,7 @@ const State = {
   dxfData: null, // 解析済みDXFデータ
   dxfLayers: {}, // レイヤー名ごとの管理
   dxfLayerColors: {}, // レイヤー名ごとのCAD定義色
+  dxfHiddenLayers: {}, // CAD上で非表示(OFF)またはフリーズされたレイヤー
   dxfZoneId: 9, // DXF用の適用系 (デフォルト: 現在地または全体系)
   dxfAxisMode: 'math', // デフォルト: 数学座標系 (X=東, Y=北)
   dxfColor: 'original', // 'original' (元のCAD色) または HEXカラー
@@ -1155,7 +1162,8 @@ document.getElementById('btnToggleLayers').addEventListener('click', () => {
 let gpsMarker = null;
 let gpsCircle = null;
 const knownMarkerGroup = L.layerGroup().addTo(map);
-const dxfLayerGroup = L.featureGroup().addTo(map); // DXF図面グループ
+const dxfLayerGroup = L.featureGroup().addTo(map); // DXF図面グループ (線・ポリライン・点)
+const dxfTextGroup = L.layerGroup().addTo(map); // DXF文字グループ (注記・寸法)
 
 // --- 5. UIの初期化とイベント設定 ---
 function initUi() {
@@ -1346,6 +1354,18 @@ function initUi() {
     State.dxfWeight = parseInt(e.target.value, 10);
     renderDxfEntities();
   });
+  const chkShowDxfText = document.getElementById('chkShowDxfText');
+  if (chkShowDxfText) {
+    chkShowDxfText.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        if (!map.hasLayer(dxfTextGroup)) map.addLayer(dxfTextGroup);
+        showToast('DXF文字を表示');
+      } else {
+        if (map.hasLayer(dxfTextGroup)) map.removeLayer(dxfTextGroup);
+        showToast('DXF文字を非表示');
+      }
+    });
+  }
 }
 
 function activateTab(tabId) {
@@ -1766,10 +1786,15 @@ function parseBinaryDxf(buffer) {
       }
       if (code === 2) {
         currentLayerName = val.trim();
-        if (!layers[currentLayerName]) layers[currentLayerName] = {};
+        if (!layers[currentLayerName]) layers[currentLayerName] = { colorIndex: 7, isOff: false, frozen: false };
+      }
+      if (code === 70 && currentLayerName) {
+        layers[currentLayerName].flags = val;
+        if (val & 1) layers[currentLayerName].frozen = true;
       }
       if (code === 62 && currentLayerName) {
         layers[currentLayerName].colorIndex = Math.abs(val);
+        if (val < 0) layers[currentLayerName].isOff = true;
       }
       if (code === 420 && currentLayerName) {
         layers[currentLayerName].color = val;
@@ -1814,6 +1839,12 @@ function parseBinaryDxf(buffer) {
           currentEntity.layer = val.trim();
           if (currentEntity.type === 'POLYLINE' && currentPolyline) {
             currentPolyline.layer = val.trim();
+          }
+        }
+        if (code === 60) {
+          currentEntity.invisible = (val === 1);
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.invisible = (val === 1);
           }
         }
         if (code === 62) {
@@ -1963,7 +1994,7 @@ function readDxfFileAsText(file) {
 function parseDxfFallback(text) {
   const lines = text.split(/\r?\n/);
   const entities = [];
-  const layerColors = {};
+  const layers = {};
   let currentEntity = null;
   let inEntitiesSection = false;
   let inLayerTable = false;
@@ -1983,9 +2014,19 @@ function parseDxfFallback(text) {
         inLayerTable = false;
         continue;
       }
-      if (code === 2) currentLayerName = val.trim();
+      if (code === 2) {
+        currentLayerName = val.trim();
+        if (!layers[currentLayerName]) layers[currentLayerName] = { colorIndex: 7, isOff: false, frozen: false };
+      }
+      if (code === 70 && currentLayerName) {
+        const flagVal = parseInt(val, 10);
+        layers[currentLayerName].flags = flagVal;
+        if (flagVal & 1) layers[currentLayerName].frozen = true;
+      }
       if (code === 62 && currentLayerName) {
-        layerColors[currentLayerName] = Math.abs(parseInt(val, 10));
+        const colVal = parseInt(val, 10);
+        layers[currentLayerName].colorIndex = Math.abs(colVal);
+        if (colVal < 0) layers[currentLayerName].isOff = true;
       }
     }
 
@@ -2007,6 +2048,7 @@ function parseDxfFallback(text) {
       currentEntity = { type: val, layer: '0', vertices: [] };
     } else if (currentEntity) {
       if (code === 8) currentEntity.layer = val;
+      if (code === 60) currentEntity.invisible = (parseInt(val, 10) === 1);
       if (code === 62) currentEntity.color = Math.abs(parseInt(val, 10));
       if (code === 10) currentEntity.tempX = parseFloat(val);
       if (code === 20) {
@@ -2033,7 +2075,7 @@ function parseDxfFallback(text) {
       if (code === 70 && (val === '1' || val === '129')) currentEntity.shape = true; // closed
     }
   }
-  return { entities, tables: { layer: { layers: layerColors } } };
+  return { entities, tables: { layer: { layers: layers } } };
 }
 
 async function handleDxfFileSelect(e) {
@@ -2103,20 +2145,38 @@ async function handleDxfFileSelect(e) {
 
     State.dxfData = dxf;
 
-    // レイヤー色のマッピング構築 (正確なHEXカラーとして直接辞書化)
+    // レイヤー色および非表示状態のマッピング構築
     State.dxfLayerColors = {};
+    State.dxfHiddenLayers = {};
     if (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) {
       const lyrs = dxf.tables.layer.layers;
       for (const [lyrName, lyrObj] of Object.entries(lyrs)) {
+        const trimmed = lyrName.trim();
         let hexCol = '#000000';
+        let isHidden = false;
+
         if (typeof lyrObj === 'number') {
           hexCol = aciIndexToHex(lyrObj);
-        } else if (lyrObj && typeof lyrObj.colorIndex === 'number') {
-          hexCol = aciIndexToHex(lyrObj.colorIndex);
-        } else if (lyrObj && typeof lyrObj.color === 'number') {
-          hexCol = rgbIntToHex(lyrObj.color);
+          if (lyrObj < 0) isHidden = true;
+        } else if (lyrObj) {
+          if (typeof lyrObj.colorIndex === 'number') {
+            hexCol = aciIndexToHex(lyrObj.colorIndex);
+            if (lyrObj.colorIndex < 0 || lyrObj.isOff) isHidden = true;
+          } else if (typeof lyrObj.color === 'number') {
+            hexCol = rgbIntToHex(lyrObj.color);
+            if (lyrObj.color < 0 || lyrObj.isOff) isHidden = true;
+          }
+          if (lyrObj.frozen || (typeof lyrObj.flags === 'number' && (lyrObj.flags & 1))) {
+            isHidden = true;
+          }
+          if (lyrObj.visible === false) {
+            isHidden = true;
+          }
         }
-        State.dxfLayerColors[lyrName.trim()] = hexCol;
+        State.dxfLayerColors[trimmed] = hexCol;
+        if (isHidden) {
+          State.dxfHiddenLayers[trimmed] = true;
+        }
       }
     }
 
@@ -2136,6 +2196,7 @@ async function handleDxfFileSelect(e) {
 // DXFエンティティの地図描画
 function renderDxfEntities(shouldZoom = false) {
   dxfLayerGroup.clearLayers();
+  dxfTextGroup.clearLayers();
   State.dxfLayers = {};
 
   if (!State.dxfData || !State.dxfData.entities) return;
@@ -2152,7 +2213,15 @@ function renderDxfEntities(shouldZoom = false) {
   let textCount = 0;
 
   entities.forEach((ent) => {
-    const layerName = ent.layer || '0';
+    // 1. エンティティ自身の非表示判定
+    if (ent.invisible) return;
+
+    // 2. 所属画層(レイヤー)の非表示・フリーズ判定
+    const layerName = (ent.layer || '0').trim();
+    if (State.dxfHiddenLayers && State.dxfHiddenLayers[layerName]) {
+      return; // CAD上で非表示またはフリーズされた画層はスキップ
+    }
+
     if (!State.dxfLayers[layerName]) {
       State.dxfLayers[layerName] = [];
     }
@@ -2213,7 +2282,7 @@ function renderDxfEntities(shouldZoom = false) {
       }
     }
 
-    // 4. 文字 (TEXT / MTEXT)
+    // 4. 文字 (TEXT / MTEXT) - dxfTextGroup に格納して一括ON/OFF切替可能に
     else if ((ent.type === 'TEXT' || ent.type === 'MTEXT') && (ent.startPoint || ent.position)) {
       const pt = ent.startPoint || ent.position;
       const ll = xyToLatLng(pt.x, pt.y, zoneId, isSur);
@@ -2224,16 +2293,27 @@ function renderDxfEntities(shouldZoom = false) {
           iconAnchor: [0, 10]
         });
         const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon, interactive: false });
-        dxfLayerGroup.addLayer(textMarker);
+        dxfTextGroup.addLayer(textMarker);
         textCount++;
       }
     }
   });
 
+  // DXF文字表示チェックボックスの状態反映
+  const chkText = document.getElementById('chkShowDxfText');
+  if (chkText && !chkText.checked) {
+    if (map.hasLayer(dxfTextGroup)) map.removeLayer(dxfTextGroup);
+  } else {
+    if (!map.hasLayer(dxfTextGroup)) map.addLayer(dxfTextGroup);
+  }
+
   const totalDrawn = lineCount + polyCount + pointCount + textCount;
   const layerKeys = Object.keys(State.dxfLayers);
+  const hiddenCount = State.dxfHiddenLayers ? Object.keys(State.dxfHiddenLayers).length : 0;
 
-  document.getElementById('dxfStatusText').textContent = `描画中 (${layerKeys.length} 画層)`;
+  document.getElementById('dxfStatusText').textContent = hiddenCount > 0
+    ? `描画中 (${layerKeys.length} 画層表示 / ${hiddenCount} 画層非表示)`
+    : `描画中 (${layerKeys.length} 画層)`;
   document.getElementById('dxfEntityCount').textContent = `線:${lineCount + polyCount} 点:${pointCount} 文字:${textCount}`;
 
   if (shouldZoom && totalDrawn > 0) {
@@ -2243,12 +2323,23 @@ function renderDxfEntities(shouldZoom = false) {
 
 // 図面全体にズーム
 function zoomToDxfBounds() {
-  if (!dxfLayerGroup || dxfLayerGroup.getLayers().length === 0) {
+  const hasLineLayers = dxfLayerGroup && dxfLayerGroup.getLayers().length > 0;
+  const hasTextLayers = dxfTextGroup && dxfTextGroup.getLayers().length > 0;
+
+  if (!hasLineLayers && !hasTextLayers) {
     showToast('描画された図面がありません');
     return;
   }
-  const bounds = dxfLayerGroup.getBounds();
-  if (bounds.isValid()) {
+
+  let bounds = null;
+  if (hasLineLayers) {
+    bounds = dxfLayerGroup.getBounds();
+  } else if (hasTextLayers) {
+    const textFeatureGroup = L.featureGroup(dxfTextGroup.getLayers());
+    bounds = textFeatureGroup.getBounds();
+  }
+
+  if (bounds && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 22, animate: true });
     // ボトムシートを閉じて地図を見やすくする
     document.getElementById('bottomBar').classList.remove('expanded');
@@ -2263,9 +2354,11 @@ function clearDxfData() {
   if (!confirm('取り込んだCAD図面を消去しますか？')) return;
 
   dxfLayerGroup.clearLayers();
+  dxfTextGroup.clearLayers();
   State.dxfData = null;
   State.dxfRawText = null;
   State.dxfLayers = {};
+  State.dxfHiddenLayers = {};
 
   document.getElementById('dxfFileInput').value = '';
   document.getElementById('dxfStatusText').textContent = '未読込';
