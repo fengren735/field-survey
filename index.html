@@ -779,7 +779,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.5 (2026/11/22 21:10)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.6 (2026/11/22 23:40)</span>
     </div>
   </div>
 
@@ -935,6 +935,7 @@
           <div class="tab-item active" data-tab="tab-points">既知点 (<span id="knownCount">0</span>)</div>
           <div class="tab-item" data-tab="tab-csv">CSV</div>
           <div class="tab-item" data-tab="tab-dxf">CAD (DXF)</div>
+          <div class="tab-item" data-tab="tab-ts">📡 TS/T3D</div>
           <div class="tab-item" data-tab="tab-settings">系・設定</div>
         </div>
 
@@ -1108,6 +1109,105 @@
           </div>
         </div>
 
+        <!-- Tab 4: TS Observation & T3D Expansion (T3DX / T3DC) -->
+        <div class="tab-panel" id="tab-ts">
+          <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569; line-height:1.5;">
+            <b>📡 トータルステーション(TS)観測データ & T3D自動展開</b><br>
+            トプコン等の観測データ(O1K)またはT3D形式CSVを読み込み、登録既知点を参照して遺構線・標高点・注記を自動展開します。<br>
+            ※意味コードエラー時も最後まで展開しきり、エラー点は<b>赤丸＋点名</b>、結線は<b>未閉合ブレイク</b>で安全に可視化します。
+          </div>
+
+          <!-- 適用する平面直角座標系の確認・選択 -->
+          <div class="form-group" style="margin-top:10px;">
+            <label class="form-label" style="display:flex; justify-content:space-between;">
+              <span>📍 観測データの平面直角座標系</span>
+              <span style="font-size:10px; color:#0284c7;">※他地域のデータ処理にも対応</span>
+            </label>
+            <select id="tsZoneSelect" class="select-box" style="width:100%;">
+              <!-- 1〜19系 -->
+            </select>
+          </div>
+
+          <!-- 展開モード切替 (T3DX: O1K / T3DC: CSV) -->
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <label style="flex:1; display:flex; align-items:center; gap:6px; padding:8px 10px; background:#f0f9ff; border:1.5px solid #7dd3fc; border-radius:8px; cursor:pointer; font-size:11.5px; font-weight:700; color:#0369a1;">
+              <input type="radio" name="tsModeRadio" value="t3dx" checked> 🔭 T3DX (O1K観測データ)
+            </label>
+            <label style="flex:1; display:flex; align-items:center; gap:6px; padding:8px 10px; background:#f8fafc; border:1.5px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:11.5px; font-weight:700; color:#475569;">
+              <input type="radio" name="tsModeRadio" value="t3dc"> 📋 T3DC (T3D CSV)
+            </label>
+          </div>
+
+          <!-- T3DX設定パネル (O1K) -->
+          <div id="panelT3Dx" style="display:block; margin-top:10px;">
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:8px 10px; font-size:11px; color:#166534; display:flex; justify-content:space-between; align-items:center;">
+              <span>📌 <b>登録既知点の自動参照</b>: 器械点・後視点を照合</span>
+              <span id="tsKnownBadge" style="background:#dcfce7; padding:2px 8px; border-radius:4px; font-weight:bold;">0点 登録済</span>
+            </div>
+
+            <div class="form-group" style="margin-top:8px;">
+              <label class="form-label">O1K観測ファイル (.o1k)</label>
+              <input type="file" id="tsO1kInput" accept=".o1k,.O1K,.txt" class="input-box" style="padding:6px; font-size:12px;">
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+              <label style="font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="chkTsUseGeoid" checked> 🌐 国土地理院 ジオイド高API自動補正 (規約準拠レート制御)
+              </label>
+              <label style="font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="chkTsUseScale" checked> 📐 平面直角座標系の投影縮尺係数を自動補正
+              </label>
+            </div>
+          </div>
+
+          <!-- T3DC設定パネル (CSV) -->
+          <div id="panelT3Dc" style="display:none; margin-top:10px;">
+            <div class="form-group">
+              <label class="form-label">T3D形式 CSVファイル (.csv)</label>
+              <input type="file" id="tsCsvInput" accept=".csv,.txt" class="input-box" style="padding:6px; font-size:12px;">
+              <div style="font-size:10.5px; color:#64748b; margin-top:2px;">フォーマット: 点番号, 意味コード, X, Y, Z</div>
+            </div>
+          </div>
+
+          <!-- 共通表示オプション -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:8px; border-top:1px dashed #cbd5e1;">
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
+              <input type="checkbox" id="chkTsShowText" checked> 🔤 点名・注記・標高テキストを表示
+            </label>
+          </div>
+
+          <!-- アクションボタン -->
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <button class="btn btn-primary" id="btnExecuteTs" style="flex:2; font-weight:bold; padding:9px 12px;">
+              🚀 図上自動展開
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btnDownloadT3dCsv" disabled style="flex:1.2; font-size:11px;">
+              📥 T3D CSV出力
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btnZoomToTs" disabled style="font-size:11px;">
+              🔍 ズーム
+            </button>
+            <button class="btn btn-danger btn-sm" id="btnClearTs" disabled style="font-size:11px;">
+              🗑️ 消去
+            </button>
+          </div>
+
+          <!-- 展開結果・エラーサマリー -->
+          <div id="tsResultPanel" style="display:none; margin-top:12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <b style="font-size:12px; color:#0f172a;" id="tsResultTitle">📊 展開サマリー</b>
+              <span id="tsResultCounts" style="font-size:11px; color:#0284c7; font-weight:bold;"></span>
+            </div>
+            <div id="tsErrorSection" style="display:none; margin-top:6px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:8px;">
+              <div style="color:#b91c1c; font-size:11px; font-weight:bold; display:flex; align-items:center; gap:4px;">
+                <span>⚠️ コードエラー / 結線ブレイク (<span id="tsErrorCount">0</span> 件)</span>
+              </div>
+              <div id="tsErrorList" style="max-height:120px; overflow-y:auto; font-size:10px; color:#991b1b; margin-top:4px; font-family:monospace; line-height:1.4;">
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Tab 3: System & Axis Settings -->
         <div class="tab-panel" id="tab-settings">
           <div class="form-group">
@@ -1141,7 +1241,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.3.5 (2026/11/22 21:10)</b>
+              アプリVer: <b id="settingsVerLabel">v1.3.6 (2026/11/22 23:40)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1272,7 +1372,14 @@ const State = {
   measurePoints: [], // 計測選択点 [{ lat, lng, x, y, name, type }]
   navActive: false, // 誘導ナビ中か
   navTarget: null, // 誘導ナビ目標点 { lat, lng, x, y, name }
-  snapEnabled: true // オブジェクトスナップ(O-SNAP)有効
+  snapEnabled: true, // オブジェクトスナップ(O-SNAP)有効
+  // TS観測 & T3D展開
+  tsZoneId: 9, // TS展開の適用系 (デフォルト: 現在系)
+  tsPoints: [], // 展開点群 [{ lineNum, name, x, y, z, lat, lng, isError, errorMsg, sensyu, kessen, layer }]
+  tsLines: [], // 展開線群 [{ layer, color, weight, dashArray, isClosed, points }]
+  tsSnapPoints: [], // TS展開図形のスナップ点キャッシュ
+  tsLastO1kResult: null, // O1K計算結果 (CSVダウンロード用)
+  tsShowText: true // 点名・注記テキストを表示するか
 };
 
 // --- 3. ユーティリティ関数 ---
@@ -1481,6 +1588,8 @@ let gpsCircle = null;
 const knownMarkerGroup = L.layerGroup().addTo(map);
 const dxfLayerGroup = L.featureGroup().addTo(map); // DXF図面グループ (線・ポリライン・点)
 const dxfTextGroup = L.layerGroup().addTo(map); // DXF文字グループ (注記・寸法)
+const tsLayerGroup = L.featureGroup().addTo(map); // TS観測・T3D展開図形グループ (遺構線・ポリライン・標高点・赤丸エラー)
+const tsTextGroup = L.layerGroup().addTo(map); // TS観測・T3D展開注記グループ (点名・標高・属性)
 const snapLayerGroup = L.layerGroup().addTo(map); // スナップマーカー
 const measureLayerGroup = L.layerGroup().addTo(map); // スナップ計測線・マーカー
 const navLayerGroup = L.layerGroup().addTo(map); // 逆打ち誘導ライン・マーカー
@@ -1492,6 +1601,7 @@ function initUi() {
   const modalZone = document.getElementById('modalZone');
   const dxfZone = document.getElementById('dxfZoneSelect');
   const inlineZone = document.getElementById('inlinePointZone');
+  const tsZone = document.getElementById('tsZoneSelect');
 
   JGD_ZONES.forEach(z => {
     const opt1 = document.createElement('option');
@@ -1513,13 +1623,20 @@ function initUi() {
     opt4.value = z.id;
     opt4.textContent = `${z.name} (${z.desc})`;
     if (inlineZone) inlineZone.appendChild(opt4);
+
+    const opt5 = document.createElement('option');
+    opt5.value = z.id;
+    opt5.textContent = `${z.name} (${z.desc})`;
+    if (tsZone) tsZone.appendChild(opt5);
   });
 
   selZone.value = State.currentZoneId;
   modalZone.value = State.currentZoneId;
   if (dxfZone) dxfZone.value = State.currentZoneId;
   if (inlineZone) inlineZone.value = State.currentZoneId;
+  if (tsZone) tsZone.value = State.currentZoneId;
   State.dxfZoneId = State.currentZoneId;
+  State.tsZoneId = State.currentZoneId;
 
   // ローカルストレージ復元
   loadSettingsAndPoints();
@@ -1686,6 +1803,219 @@ function initUi() {
       }
     });
   }
+
+  // TS観測 & T3D自動展開 UIイベント
+  const tsZoneSel = document.getElementById('tsZoneSelect');
+  if (tsZoneSel) {
+    tsZoneSel.addEventListener('change', (e) => {
+      State.tsZoneId = parseInt(e.target.value, 10);
+      const zObj = JGD_ZONES.find(z => z.id === State.tsZoneId);
+      showToast(`TS観測の適用系を「${zObj ? zObj.name : ''}」に設定`);
+    });
+  }
+
+  // T3DX / T3DC モード切替
+  document.querySelectorAll('input[name="tsModeRadio"]').forEach(r => {
+    r.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      document.getElementById('panelT3Dx').style.display = (mode === 't3dx') ? 'block' : 'none';
+      document.getElementById('panelT3Dc').style.display = (mode === 't3dc') ? 'block' : 'none';
+      // 親ラベルの選択スタイル更新
+      document.querySelectorAll('input[name="tsModeRadio"]').forEach(radio => {
+        const lbl = radio.parentElement;
+        if (radio.checked) {
+          lbl.style.background = '#f0f9ff';
+          lbl.style.borderColor = '#7dd3fc';
+          lbl.style.color = '#0369a1';
+        } else {
+          lbl.style.background = '#f8fafc';
+          lbl.style.borderColor = '#cbd5e1';
+          lbl.style.color = '#475569';
+        }
+      });
+    });
+  });
+
+  // TS自動展開実行ボタン
+  const btnExecTs = document.getElementById('btnExecuteTs');
+  if (btnExecTs) {
+    btnExecTs.addEventListener('click', async () => {
+      const modeRadio = document.querySelector('input[name="tsModeRadio"]:checked');
+      const mode = modeRadio ? modeRadio.value : 't3dx';
+      const targetZoneId = parseInt(document.getElementById('tsZoneSelect').value, 10) || State.currentZoneId;
+      const showText = document.getElementById('chkTsShowText').checked;
+
+      if (mode === 't3dx') {
+        // T3DX: O1Kファイル読み込み
+        const fileInput = document.getElementById('tsO1kInput');
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+          alert('O1K観測ファイルを選択してください。');
+          return;
+        }
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        btnExecTs.disabled = true;
+        btnExecTs.textContent = '⏳ 計算・展開中...';
+        showToast('O1K観測データを計算中...');
+
+        reader.onload = async (ev) => {
+          try {
+            const o1kText = ev.target.result;
+            const useGeoid = document.getElementById('chkTsUseGeoid').checked;
+            const useScale = document.getElementById('chkTsUseScale').checked;
+
+            const o1kRes = await processT3DxO1k(o1kText, targetZoneId, { useGeoid, useScale });
+            if (o1kRes.points.length === 0) {
+              alert('計算可能な観測点が見つかりませんでした。\n器械点・後視点名が登録既知点と一致しているかご確認ください。');
+              btnExecTs.disabled = false;
+              btnExecTs.textContent = '🚀 図上自動展開';
+              return;
+            }
+
+            State.tsLastO1kResult = o1kRes.points;
+            const expanded = expandT3DCode(o1kRes.points, targetZoneId, { showText });
+            renderTsLayers(expanded, showText);
+
+            // 結果サマリー更新
+            const resPanel = document.getElementById('tsResultPanel');
+            const resCounts = document.getElementById('tsResultCounts');
+            const errSec = document.getElementById('tsErrorSection');
+            const errCountEl = document.getElementById('tsErrorCount');
+            const errListEl = document.getElementById('tsErrorList');
+
+            if (resPanel) resPanel.style.display = 'block';
+            if (resCounts) {
+              resCounts.textContent = `結線: ${expanded.lines.length}本 (点: ${o1kRes.points.length}個)`;
+            }
+
+            // エラー・ブレイク表示
+            const allErrors = (o1kRes.logs.filter(l => l.level === 'danger' || l.level === 'warning')).concat(
+              expanded.errors.map(e => ({ level: 'danger', msg: e.msg }))
+            );
+
+            if (allErrors.length > 0) {
+              errSec.style.display = 'block';
+              errCountEl.textContent = allErrors.length;
+              errListEl.innerHTML = allErrors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
+            } else {
+              errSec.style.display = 'none';
+            }
+
+            document.getElementById('btnDownloadT3dCsv').disabled = false;
+            document.getElementById('btnZoomToTs').disabled = false;
+            document.getElementById('btnClearTs').disabled = false;
+
+            showToast(`T3DX展開完了: 結線${expanded.lines.length}本, 観測点${o1kRes.points.length}点`);
+            zoomToTsBounds();
+          } catch (err) {
+            console.error(err);
+            alert('T3DX展開処理中にエラーが発生しました: ' + err.message);
+          } finally {
+            btnExecTs.disabled = false;
+            btnExecTs.textContent = '🚀 図上自動展開';
+          }
+        };
+        reader.readAsText(file, 'shift-jis'); // O1KはShift_JIS形式が標準
+      } else {
+        // T3DC: CSVファイル読み込み
+        const fileInput = document.getElementById('tsCsvInput');
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+          alert('T3D形式 CSVファイルを選択してください。');
+          return;
+        }
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        btnExecTs.disabled = true;
+        btnExecTs.textContent = '⏳ 展開中...';
+
+        reader.onload = (ev) => {
+          try {
+            const csvText = ev.target.result;
+            const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+            const csvPoints = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const row = lines[i].split(',').map(c => c.trim());
+              if (row.length < 5) continue;
+              // ヘッダー行判定 (1列目が数値でない場合など)
+              const testNum = parseFloat(row[0]);
+              const testX = parseFloat(row[2]);
+              const testY = parseFloat(row[3]);
+              if (isNaN(testX) || isNaN(testY)) continue;
+
+              csvPoints.push({
+                lineNum: isNaN(testNum) ? (i + 1) : testNum,
+                name: row[1] || '',
+                x: testX,
+                y: testY,
+                z: parseFloat(row[4]) || 0
+              });
+            }
+
+            if (csvPoints.length === 0) {
+              alert('有効なT3Dデータ行 (点番号,コード,X,Y,Z) が見つかりませんでした。');
+              btnExecTs.disabled = false;
+              btnExecTs.textContent = '🚀 図上自動展開';
+              return;
+            }
+
+            State.tsLastO1kResult = csvPoints;
+            const expanded = expandT3DCode(csvPoints, targetZoneId, { showText });
+            renderTsLayers(expanded, showText);
+
+            const resPanel = document.getElementById('tsResultPanel');
+            const resCounts = document.getElementById('tsResultCounts');
+            const errSec = document.getElementById('tsErrorSection');
+            const errCountEl = document.getElementById('tsErrorCount');
+            const errListEl = document.getElementById('tsErrorList');
+
+            if (resPanel) resPanel.style.display = 'block';
+            if (resCounts) {
+              resCounts.textContent = `結線: ${expanded.lines.length}本 (点: ${csvPoints.length}個)`;
+            }
+
+            if (expanded.errors.length > 0) {
+              errSec.style.display = 'block';
+              errCountEl.textContent = expanded.errors.length;
+              errListEl.innerHTML = expanded.errors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
+            } else {
+              errSec.style.display = 'none';
+            }
+
+            document.getElementById('btnDownloadT3dCsv').disabled = false;
+            document.getElementById('btnZoomToTs').disabled = false;
+            document.getElementById('btnClearTs').disabled = false;
+
+            showToast(`T3DC展開完了: 結線${expanded.lines.length}本, 点${csvPoints.length}個`);
+            zoomToTsBounds();
+          } catch (err) {
+            console.error(err);
+            alert('T3DC展開処理中にエラーが発生しました: ' + err.message);
+          } finally {
+            btnExecTs.disabled = false;
+            btnExecTs.textContent = '🚀 図上自動展開';
+          }
+        };
+        reader.readAsText(file, 'shift-jis');
+      }
+    });
+  }
+
+  // 各種ボタン
+  document.getElementById('btnDownloadT3dCsv').addEventListener('click', downloadT3dCsv);
+  document.getElementById('btnZoomToTs').addEventListener('click', zoomToTsBounds);
+  document.getElementById('btnClearTs').addEventListener('click', clearTsData);
+  document.getElementById('chkTsShowText').addEventListener('change', (e) => {
+    if (e.target.checked) {
+      if (!map.hasLayer(tsTextGroup)) map.addLayer(tsTextGroup);
+      showToast('TS文字注記を表示');
+    } else {
+      if (map.hasLayer(tsTextGroup)) map.removeLayer(tsTextGroup);
+      showToast('TS文字注記を非表示');
+    }
+  });
 
   // スナップ計測 & 逆打ち誘導ナビ UIイベント
   const btnToggleMeasure = document.getElementById('btnToggleMeasure');
@@ -2008,6 +2338,8 @@ function renderKnownPoints() {
 
   const pts = State.knownPoints;
   document.getElementById('knownCount').textContent = pts.length;
+  const tsBadge = document.getElementById('tsKnownBadge');
+  if (tsBadge) tsBadge.textContent = `${pts.length}点 登録済`;
 
   if (pts.length === 0) {
     container.innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted); font-size:12px;">既知点はまだ登録されていません</div>';
@@ -2790,6 +3122,653 @@ function clearDxfData() {
   document.getElementById('btnClearDxf').disabled = true;
   showToast('CAD図面を消去しました');
 }
+
+// ==========================================
+// 8. TS観測データ計算 & T3D自動展開エンジン (T3DX / T3DC)
+// ==========================================
+
+// 国土地理院 ジオイド高計算API (日本のジオイド2011) レートリミッター付きキュー (公式制限: 10秒間に最大10回まで・安全マージン付1.3秒間隔)
+const geoidQueue = [];
+let isGeoidProcessing = false;
+let lastGeoidCallTime = 0;
+const geoidCache = {}; // "lat,lng" -> geoid (m)
+
+async function fetchGsiGeoid(lat, lng) {
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return null;
+  const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+  if (geoidCache[key] !== undefined) return geoidCache[key];
+
+  return new Promise((resolve) => {
+    geoidQueue.push({ lat, lng, key, resolve });
+    processGeoidQueue();
+  });
+}
+
+async function processGeoidQueue() {
+  if (isGeoidProcessing || geoidQueue.length === 0) return;
+  isGeoidProcessing = true;
+
+  while (geoidQueue.length > 0) {
+    const item = geoidQueue.shift();
+    // 10秒間に10回を超えない制限を安全マージンをもって厳守するため、直前のリクエストから最低1300ms(1.3秒・10秒約7回ペース)空ける
+    const now = Date.now();
+    const elapsed = now - lastGeoidCallTime;
+    if (elapsed < 1300) {
+      await new Promise(r => setTimeout(r, 1300 - elapsed));
+    }
+
+    try {
+      const url = `https://vldb.gsi.go.jp/sokuchi/surveycalc/geoid/calcgh/cgi/geoidcalc.pl?outputType=json&latitude=${item.lat}&longitude=${item.lng}`;
+      lastGeoidCallTime = Date.now();
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && data.OutputData && data.OutputData.geoid) {
+        const gVal = parseFloat(data.OutputData.geoid);
+        geoidCache[item.key] = isNaN(gVal) ? null : gVal;
+        item.resolve(geoidCache[item.key]);
+      } else {
+        item.resolve(null);
+      }
+    } catch (e) {
+      console.warn('ジオイド高API取得失敗:', e);
+      item.resolve(null);
+    }
+  }
+
+  isGeoidProcessing = false;
+}
+
+// 平面直角座標系における投影縮尺係数の計算 (中央子午線離れYに基づく)
+function calcScaleFactor(y) {
+  const m0 = 0.9999;
+  const R = 6370000.0;
+  const yVal = typeof y === 'number' && !isNaN(y) ? y : 0.0;
+  return m0 * (1.0 + (yVal * yVal) / (2.0 * R * R));
+}
+
+// DMS形式 (DDD.MMSS) -> DEG (十進度)
+function dmsToDeg(dmsVal) {
+  if (typeof dmsVal !== 'number' || isNaN(dmsVal)) return 0;
+  const sign = dmsVal < 0 ? -1 : 1;
+  const absV = Math.abs(dmsVal);
+  const d = Math.floor(absV);
+  const rem1 = (absV - d) * 100;
+  const m = Math.floor(rem1 + 1e-9);
+  const s = (rem1 - m) * 100;
+  return sign * (d + m / 60.0 + s / 3600.0);
+}
+function degToRad(deg) { return (deg * Math.PI) / 180.0; }
+function radToDeg(rad) { return (rad * 180.0) / Math.PI; }
+
+// 登録既知点から点名で検索 (完全一致またはトリム・英字大小無視)
+function findKnownPointByName(nameStr) {
+  if (!nameStr) return null;
+  const target = String(nameStr).trim().toLowerCase();
+  return State.knownPoints.find(p => {
+    const pName = (p.name || '').trim().toLowerCase();
+    const pId = (p.id || '').trim().toLowerCase();
+    return pName === target || pId === target;
+  }) || null;
+}
+
+// T3D画層スタイル定義 (線種・色・線幅・線種スタイル)
+const T3D_LAYER_DEFS = {
+  // 遺構線
+  "U": { name: "上端", color: "#16a34a", weight: 2.5 },
+  "N": { name: "中端", color: "#84cc16", weight: 2.5 },
+  "S": { name: "下端", color: "#a16207", weight: 2.5 },
+  "X": { name: "切り合い線", color: "#c026d3", weight: 2.5 },
+  "K": { name: "撹乱上端", color: "#64748b", weight: 2.5 },
+  "C": { name: "調査区上端", color: "#2563eb", weight: 3 },
+  "Y": { name: "調査区下端", color: "#0891b2", weight: 3 },
+  "T": { name: "トレンチ上端", color: "#7c3aed", weight: 2.5 },
+  "R": { name: "トレンチ下端", color: "#4f46e5", weight: 2.5 },
+  "F": { name: "焼土", color: "#ea580c", weight: 2.5 },
+  "H": { name: "硬化面", color: "#ca8a04", weight: 2.5 },
+  "D": { name: "粘土", color: "#d97706", weight: 2.5 },
+  "A": { name: "灰", color: "#64748b", weight: 2.5 },
+  "B": { name: "炭化物", color: "#1e293b", weight: 2.5 },
+  "L": { name: "断面・分層他", color: "#0d9488", weight: 2.5 },
+  "O": { name: "その他線", color: "#db2777", weight: 2.5 },
+  "I": { name: "検出", color: "#059669", weight: 2.5 },
+  "V": { name: "上端-掘方", color: "#15803d", weight: 2.5, dashArray: "5, 5" },
+  "W": { name: "中端-掘方", color: "#65a30d", weight: 2.5, dashArray: "5, 5" },
+  "Z": { name: "下端-掘方", color: "#854d0e", weight: 2.5, dashArray: "5, 5" },
+  "G": { name: "焼土-掘方", color: "#c2410c", weight: 2.5, dashArray: "5, 5" },
+  "J": { name: "硬化面-掘方", color: "#a16207", weight: 2.5, dashArray: "5, 5" },
+  "M": { name: "粘土-掘方", color: "#b45309", weight: 2.5, dashArray: "5, 5" },
+  "P": { name: "灰-掘方", color: "#475569", weight: 2.5, dashArray: "5, 5" },
+  "Q": { name: "炭化物-掘方", color: "#0f172a", weight: 2.5, dashArray: "5, 5" },
+  "E": { name: "断面・分層他-掘方", color: "#0f766e", weight: 2.5, dashArray: "5, 5" },
+
+  // 単独点・シンボル
+  "0": { name: "D標高点", color: "#0284c7" },
+  "-": { name: "D標高点-掘方", color: "#0369a1" },
+  "1": { name: "D土器", color: "#b45309" },
+  "2": { name: "D石器", color: "#475569" },
+  "3": { name: "D石製品", color: "#334155" },
+  "4": { name: "D土製品", color: "#92400e" },
+  "5": { name: "D礫", color: "#78716c" },
+  "6": { name: "D木製品", color: "#854d0e" },
+  "7": { name: "Dガラス製品", color: "#0284c7" },
+  "8": { name: "D金属製品", color: "#475569" },
+  "9": { name: "D骨", color: "#64748b" },
+  "@": { name: "Dその他", color: "#64748b" },
+  "#": { name: "Dセクションポイント", color: "#7c3aed" },
+  "$": { name: "D基準点", color: "#dc2626" },
+  "Z": { name: "自由記述", color: "#475569" }
+};
+
+// --- O1K観測データ計算 (T3DX) ---
+async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true, useScale: true }) {
+  const lines = o1kText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  let currentInst = null;
+  let instPoint = null;
+  let Ihe = 0;
+  let bsPointName = null;
+  let bsPoint = null;
+  let bsAng = 0;
+  let bsAzi = 0;
+  let flgKikai = false;
+  let flgBack = false;
+
+  const calculatedPoints = [];
+  const logs = [];
+  let lNum = 0;
+  const R = 6370000.0;
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const data = line.split(',');
+    const lineNum = lineIdx + 1;
+    const recType = line.charAt(0);
+
+    // D行: 器械点
+    if (recType === 'D') {
+      currentInst = (data[1] || '').trim();
+      Ihe = parseFloat(data[3]) || 0;
+      instPoint = findKnownPointByName(currentInst);
+      if (!instPoint) {
+        logs.push({ level: 'danger', msg: `${lineNum}行目: 器械点「${currentInst}」が登録既知点に見つかりません。` });
+        flgKikai = false;
+        flgBack = false;
+      } else {
+        flgKikai = true;
+        flgBack = false;
+        logs.push({ level: 'info', msg: `${lineNum}行目: 器械点「${currentInst}」セット (X:${instPoint.x.toFixed(3)}, Y:${instPoint.y.toFixed(3)}, H:${(instPoint.z || instPoint.h || 0).toFixed(3)})` });
+      }
+    }
+    // F行: 観測点 (後視点 または 放射点)
+    else if (recType === 'F') {
+      if (!flgKikai || !instPoint) {
+        logs.push({ level: 'danger', msg: `${lineNum}行目: 器械点未設定のためスキップ` });
+        continue;
+      }
+
+      const oc = (data[4] || '').trim();
+      const hasNine = (oc.length >= 2 && oc.charAt(1) === '9');
+      const isBackSight = !flgBack && (hasNine || findKnownPointByName(data[1]));
+
+      if (isBackSight) {
+        bsPointName = (data[1] || '').trim();
+        bsPoint = findKnownPointByName(bsPointName);
+        if (!bsPoint) {
+          logs.push({ level: 'danger', msg: `${lineNum}行目: 後視点「${bsPointName}」が登録既知点に見つかりません。` });
+          flgBack = false;
+        } else {
+          const rawBsAng = parseFloat(data[5]) || 0;
+          bsAng = degToRad(dmsToDeg(rawBsAng));
+
+          // 後視点方位角 (測量系: X=北, Y=東)
+          const dx = bsPoint.x - instPoint.x;
+          const dy = bsPoint.y - instPoint.y;
+          const bsA = Math.atan2(dy, dx);
+          const bsADeg = radToDeg(bsA);
+          bsAzi = degToRad(Math.floor(bsADeg * 3600.0) / 3600.0);
+
+          // 後視点チェック
+          const expectedDist = Math.hypot(dx, dy);
+          const th = parseFloat(data[3]) || 0;
+          let vz = dmsToDeg(parseFloat(data[6]) || 0);
+          if (vz > 180.0) vz = 180.0 - (vz - 180.0);
+          const rawSd = parseFloat(data[7]);
+
+          if (typeof rawSd === 'number' && !isNaN(rawSd)) {
+            let hd = rawSd * Math.sin(degToRad(vz));
+            const ed = rawSd * Math.cos(degToRad(vz));
+            const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+            const bsZ = bsPoint.z !== undefined ? bsPoint.z : (bsPoint.h || 0);
+            const oph = (instZ + Ihe + ed) - th;
+
+            // 投影補正・縮尺補正 (指定された系 targetZoneId に基づく現地の緯度経度でAPI取得)
+            const instLL = xyToLatLng(instPoint.x, instPoint.y, targetZoneId, true);
+            let iscale = options.useScale ? calcScaleFactor(instPoint.y) : 1.0;
+            let igeoid = (options.useGeoid && instLL) ? await fetchGsiGeoid(instLL.lat, instLL.lng) : null;
+            if (igeoid !== null) {
+              hd = hd * (R / (R + oph + igeoid));
+            }
+            if (iscale) hd = hd * iscale;
+
+            const distDiff = Math.abs(expectedDist - hd);
+            const elevDiff = Math.abs(oph - bsZ);
+            if (distDiff >= 0.03) {
+              logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との距離差 ${(distDiff * 100).toFixed(1)}cm` });
+            }
+            if (elevDiff >= 0.03) {
+              logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との標高差 ${(elevDiff * 100).toFixed(1)}cm` });
+            }
+          }
+          flgBack = true;
+          logs.push({ level: 'info', msg: `${lineNum}行目: 後視点「${bsPointName}」照準完了` });
+        }
+      }
+      // 放射観測
+      else {
+        if (!flgBack || !bsPoint) {
+          logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点未照準のためスキップ` });
+          continue;
+        }
+
+        const pname = (data[1] || '').trim();
+        const th = parseFloat(data[3]) || 0;
+        let hz = dmsToDeg(parseFloat(data[5]) || 0);
+        let vz = dmsToDeg(parseFloat(data[6]) || 0);
+
+        if (vz > 180.0) {
+          vz = 180.0 - (vz - 180.0);
+          hz = (hz + 180.0) % 360.0;
+        }
+
+        const sd = parseFloat(data[7]);
+        if (isNaN(sd)) {
+          logs.push({ level: 'warning', msg: `${lineNum}行目: 斜距離データなし` });
+          continue;
+        }
+
+        let hd = sd * Math.sin(degToRad(vz));
+        const ed = sd * Math.cos(degToRad(vz));
+        const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+        let oph = (instZ + Ihe + ed) - th;
+
+        // 補正
+        const instLL = xyToLatLng(instPoint.x, instPoint.y, targetZoneId, true);
+        let iscale = options.useScale ? calcScaleFactor(instPoint.y) : 1.0;
+        let igeoid = (options.useGeoid && instLL) ? await fetchGsiGeoid(instLL.lat, instLL.lng) : null;
+        if (igeoid !== null) {
+          hd = hd * (R / (R + oph + igeoid));
+        }
+        if (iscale) hd = hd * iscale;
+
+        const azi = (bsAzi - bsAng) + degToRad(hz);
+        const opx = instPoint.x + hd * Math.cos(azi);
+        const opy = instPoint.y + hd * Math.sin(azi);
+
+        lNum++;
+        calculatedPoints.push({
+          lineNum: lNum,
+          sourceLine: lineNum,
+          name: pname,
+          x: Math.round(opx * 1000) / 1000,
+          y: Math.round(opy * 1000) / 1000,
+          z: Math.round(oph * 1000) / 1000
+        });
+      }
+    }
+  }
+
+  return { points: calculatedPoints, logs };
+}
+
+// --- T3D意味コード展開エンジン (結線ブレイク & 赤丸エラー描画対応) ---
+function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
+  let currentLinePts = [];
+  let currentSensyu = null;
+  let currentLayerInfo = null;
+  let preKessen = null;
+  let preSensyu = null;
+
+  const linesResult = [];
+  const pointsResult = [];
+  const errorsList = [];
+
+  function commitLine(isClosed) {
+    if (currentLinePts.length >= 2) {
+      linesResult.push({
+        layer: currentLayerInfo ? currentLayerInfo.name : '遺構線',
+        color: currentLayerInfo ? currentLayerInfo.color : '#0284c7',
+        weight: currentLayerInfo ? currentLayerInfo.weight : 2.5,
+        dashArray: currentLayerInfo ? currentLayerInfo.dashArray : null,
+        isClosed: isClosed,
+        points: [...currentLinePts]
+      });
+    }
+    currentLinePts = [];
+    currentSensyu = null;
+    currentLayerInfo = null;
+  }
+
+  for (let i = 0; i < t3dPoints.length; i++) {
+    const p = t3dPoints[i];
+    const codeStr = (p.name || '').trim();
+    const lineNo = p.lineNum || (i + 1);
+
+    // 測量系(X:北, Y:東)で緯度経度へ変換
+    const ll = xyToLatLng(p.x, p.y, targetZoneId, true);
+    if (!ll) {
+      errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 座標変換エラー (X:${p.x}, Y:${p.y})` });
+      continue;
+    }
+
+    const ptObj = {
+      lineNum: lineNo,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      lat: ll.lat,
+      lng: ll.lng,
+      rawCode: codeStr
+    };
+
+    const SENSYU = codeStr.length >= 1 ? codeStr.charAt(0) : '';
+    const KESSEN = codeStr.length >= 2 ? codeStr.charAt(1) : '';
+    const NAIYOU = codeStr.length >= 3 ? codeStr.substring(2) : '';
+
+    const isLineCode = /^[A-Za-z]$/.test(SENSYU) && (KESSEN === 'A' || KESSEN === 'B' || KESSEN === 'C');
+    const isSymbolCode = /^[0-9@#\$\-Zz]$/.test(SENSYU) && (KESSEN === 'Z' || KESSEN === 'z');
+
+    // エラーケース1: コード体系外
+    if (!isLineCode && !isSymbolCode) {
+      if (currentLinePts.length > 0) {
+        commitLine(false); // 結線ブレイク！
+        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: コード「${codeStr}」が体系外のため直前結線をブレイクしました` });
+      }
+      // 赤丸・ポイント名で描画
+      pointsResult.push({
+        ...ptObj,
+        isError: true,
+        errorMsg: 'コード体系外',
+        name: codeStr || `点${lineNo}`,
+        color: '#ef4444'
+      });
+      preKessen = null;
+      preSensyu = null;
+      continue;
+    }
+
+    // 結線コードのシーケンスチェック
+    if (isLineCode) {
+      const upSensyu = SENSYU.toUpperCase();
+      const upKessen = KESSEN.toUpperCase();
+
+      // 結線完了前に線種が変更された -> ブレイク
+      if (preKessen === 'A' && preSensyu && preSensyu !== upSensyu) {
+        commitLine(false);
+        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 結線完了前に線種が「${preSensyu}」から「${upSensyu}」に変更されたため結線をブレイクしました` });
+      }
+
+      // 結線開始点(A)がないのに B または C が来た
+      if ((upKessen === 'B' || upKessen === 'C') && preKessen !== 'A') {
+        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 開始点(A)のない単独結線終了点です` });
+        pointsResult.push({
+          ...ptObj,
+          isError: true,
+          errorMsg: '結線開始コード(A)欠落',
+          name: codeStr,
+          color: '#ef4444'
+        });
+        preKessen = null;
+        preSensyu = null;
+        continue;
+      }
+
+      // 正常な結線
+      const layerDef = T3D_LAYER_DEFS[upSensyu] || { name: `線_${upSensyu}`, color: '#0284c7', weight: 2.5 };
+      currentLayerInfo = layerDef;
+      currentSensyu = upSensyu;
+      currentLinePts.push({ ...ptObj, naiyou: NAIYOU, layer: layerDef.name });
+
+      if (upKessen === 'B') {
+        commitLine(false); // オープン折れ線
+      } else if (upKessen === 'C') {
+        commitLine(true); // クローズ多角形
+      }
+
+      preKessen = upKessen;
+      preSensyu = upSensyu;
+    } else if (isSymbolCode) {
+      const upSensyu = SENSYU.toUpperCase();
+
+      // 結線途中に単独点が割り込んだ -> ブレイク
+      if (preKessen === 'A' && currentLinePts.length > 0) {
+        commitLine(false);
+        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 結線途中にシンボル「${codeStr}」が割り込んだため結線をブレイクしました` });
+      }
+
+      const symDef = T3D_LAYER_DEFS[upSensyu] || { name: `シンボル_${upSensyu}`, color: '#0284c7' };
+      pointsResult.push({
+        ...ptObj,
+        isError: false,
+        name: NAIYOU || symDef.name,
+        sensyu: upSensyu,
+        layer: symDef.name,
+        color: symDef.color,
+        isElevation: (upSensyu === '0' || upSensyu === '-')
+      });
+
+      preKessen = 'Z';
+      preSensyu = upSensyu;
+    }
+  }
+
+  // ファイル末尾で未完了の結線があればブレイク確定
+  if (currentLinePts.length > 0) {
+    commitLine(false);
+    errorsList.push({ line: t3dPoints.length, code: '', msg: 'ファイル末尾: 結線終了コード(B/C)がないためオープン折れ線として確定しました' });
+  }
+
+  return { lines: linesResult, points: pointsResult, errors: errorsList };
+}
+
+// --- TS展開レイヤーの地図描画 & スナップ登録 ---
+function renderTsLayers(expandedData, showText = true) {
+  tsLayerGroup.clearLayers();
+  tsTextGroup.clearLayers();
+  State.tsSnapPoints = [];
+
+  const { lines, points } = expandedData;
+
+  // 1. 結線 (ポリライン・ポリゴン)
+  lines.forEach((l, idx) => {
+    const latlngs = l.points.map(p => [p.lat, p.lng]);
+    const polyOpts = {
+      color: l.color,
+      weight: l.weight || 2.5,
+      opacity: 0.9,
+      dashArray: l.dashArray || null,
+      fill: false,
+      interactive: false
+    };
+
+    const poly = l.isClosed
+      ? L.polygon(latlngs, { ...polyOpts, fill: true, fillColor: l.color, fillOpacity: 0.08 })
+      : L.polyline(latlngs, polyOpts);
+
+    tsLayerGroup.addLayer(poly);
+
+    // スナップ点に全頂点を登録
+    l.points.forEach((p, vIdx) => {
+      const isEnd = (vIdx === 0 || vIdx === l.points.length - 1);
+      State.tsSnapPoints.push({
+        lat: p.lat,
+        lng: p.lng,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        name: `${l.layer} ${isEnd ? '端点' : '頂点'}${p.naiyou ? ' (' + p.naiyou + ')' : ''}`,
+        type: isEnd ? '端点' : '頂点',
+        layer: l.layer,
+        source: 'ts'
+      });
+
+      // 注記テキスト表示
+      if (showText && p.naiyou) {
+        const textIcon = L.divIcon({
+          className: 'ts-text-label',
+          html: `<div style="font-size:10px; color:${l.color}; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${escapeHtml(p.naiyou)}</div>`,
+          iconAnchor: [-4, 6]
+        });
+        tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: textIcon, interactive: false }));
+      }
+    });
+  });
+
+  // 2. 単独点・標高点・赤丸エラー点
+  points.forEach(p => {
+    if (p.isError) {
+      // 赤丸エラー点 (点名・コードを赤文字で併記)
+      const errMarker = L.circleMarker([p.lat, p.lng], {
+        radius: 6,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#ef4444',
+        fillOpacity: 1,
+        interactive: false
+      });
+      tsLayerGroup.addLayer(errMarker);
+
+      if (showText) {
+        const errIcon = L.divIcon({
+          className: 'ts-error-label',
+          html: `<div style="font-size:10px; color:#b91c1c; font-weight:800; background:#fee2e2; border:1px solid #f87171; border-radius:3px; padding:1px 4px; white-space:nowrap; pointer-events:none;">⚠️ ${escapeHtml(p.name)}</div>`,
+          iconAnchor: [-6, 6]
+        });
+        tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: errIcon, interactive: false }));
+      }
+
+      State.tsSnapPoints.push({
+        lat: p.lat,
+        lng: p.lng,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        name: `エラー点 (${p.name})`,
+        type: 'エラー点',
+        layer: 'エラー点',
+        source: 'ts'
+      });
+    } else {
+      // 正常なシンボル・標高点
+      const marker = L.circleMarker([p.lat, p.lng], {
+        radius: p.isElevation ? 3.5 : 4.5,
+        color: '#ffffff',
+        weight: 1.5,
+        fillColor: p.color || '#0284c7',
+        fillOpacity: 0.95,
+        interactive: false
+      });
+      tsLayerGroup.addLayer(marker);
+
+      if (showText) {
+        let labelHtml = '';
+        if (p.isElevation) {
+          const elevStr = typeof p.z === 'number' ? p.z.toFixed(3) : '';
+          labelHtml = `<div style="font-size:9.5px; color:#0369a1; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${elevStr}${p.name ? ' ' + escapeHtml(p.name) : ''}</div>`;
+        } else {
+          labelHtml = `<div style="font-size:10px; color:${p.color}; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${escapeHtml(p.name)}</div>`;
+        }
+        const textIcon = L.divIcon({
+          className: 'ts-text-label',
+          html: labelHtml,
+          iconAnchor: [-5, 5]
+        });
+        tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: textIcon, interactive: false }));
+      }
+
+      State.tsSnapPoints.push({
+        lat: p.lat,
+        lng: p.lng,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        name: `${p.layer}${p.name ? ' (' + p.name + ')' : ''}`,
+        type: p.isElevation ? '標高点' : 'シンボル',
+        layer: p.layer,
+        source: 'ts'
+      });
+    }
+  });
+
+  // 注記レイヤーの表示・非表示反映
+  if (showText) {
+    if (!map.hasLayer(tsTextGroup)) map.addLayer(tsTextGroup);
+  } else {
+    if (map.hasLayer(tsTextGroup)) map.removeLayer(tsTextGroup);
+  }
+}
+
+// 図面にズーム
+function zoomToTsBounds() {
+  if (!tsLayerGroup || tsLayerGroup.getLayers().length === 0) {
+    showToast('描画されたTS展開図面がありません');
+    return;
+  }
+  const bounds = tsLayerGroup.getBounds();
+  if (bounds && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 22, animate: true });
+    document.getElementById('bottomBar').classList.remove('expanded');
+    document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+    showToast('TS展開図面にズームしました');
+  }
+}
+
+// 展開データ消去
+function clearTsData() {
+  if (!tsLayerGroup || (tsLayerGroup.getLayers().length === 0 && (!State.tsPoints || State.tsPoints.length === 0))) return;
+  if (!confirm('展開されたTS図面データを消去しますか？')) return;
+
+  tsLayerGroup.clearLayers();
+  tsTextGroup.clearLayers();
+  State.tsPoints = [];
+  State.tsLines = [];
+  State.tsSnapPoints = [];
+  State.tsLastO1kResult = null;
+
+  const fileO1k = document.getElementById('tsO1kInput');
+  const fileCsv = document.getElementById('tsCsvInput');
+  if (fileO1k) fileO1k.value = '';
+  if (fileCsv) fileCsv.value = '';
+
+  const resPanel = document.getElementById('tsResultPanel');
+  if (resPanel) resPanel.style.display = 'none';
+  document.getElementById('btnDownloadT3dCsv').disabled = true;
+  document.getElementById('btnZoomToTs').disabled = true;
+  document.getElementById('btnClearTs').disabled = true;
+
+  showToast('TS図面データを消去しました');
+}
+
+// 計算結果T3D CSVダウンロード
+function downloadT3dCsv() {
+  if (!State.tsLastO1kResult || State.tsLastO1kResult.length === 0) {
+    showToast('出力可能な計算結果がありません');
+    return;
+  }
+  const rows = ['点番号,コード,X,Y,Z'];
+  State.tsLastO1kResult.forEach(p => {
+    rows.push(`${p.lineNum},${p.name},${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`);
+  });
+  const csvContent = "\uFEFF" + rows.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `T3D_result_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('T3D CSVを出力しました');
+}
 // ==========================================
 // 8. オブジェクトスナップ (O-SNAP) エンジン
 // ==========================================
@@ -2945,6 +3924,20 @@ function findNearestSnapPoint(clickLatLng, maxPixelDist = 32) {
       if (d < minDist) {
         minDist = d;
         best = dp;
+      }
+    }
+  }
+
+  // 3. TS観測・T3D展開点 (遺構線頂点・端点、標高点、遺物シンボル、赤丸エラー点)
+  const tsPts = State.tsSnapPoints || [];
+  for (let i = 0; i < tsPts.length; i++) {
+    const tp = tsPts[i];
+    if (bounds.contains([tp.lat, tp.lng])) {
+      const screenPt = map.latLngToContainerPoint([tp.lat, tp.lng]);
+      const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
+      if (d < minDist) {
+        minDist = d;
+        best = tp;
       }
     }
   }
