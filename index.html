@@ -826,7 +826,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.8 (2026/11/23 00:25)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.4.0 (2026/11/23 00:50)</span>
     </div>
   </div>
 
@@ -1199,10 +1199,10 @@
 
             <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
               <label style="font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" id="chkTsUseGeoid" checked> 🌐 国土地理院 ジオイド高API自動補正 (規約準拠レート制御)
+                <input type="checkbox" id="chkTsUseGeoid" checked> 🌐 器械点のジオイド高で距離補正 (推奨)
               </label>
               <label style="font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" id="chkTsUseScale" checked> 📐 平面直角座標系の投影縮尺係数を自動補正
+                <input type="checkbox" id="chkTsUseScale" checked> 📐 器械点の縮尺係数で距離補正 (推奨)
               </label>
             </div>
           </div>
@@ -1252,6 +1252,15 @@
               <div id="tsErrorList" style="max-height:120px; overflow-y:auto; font-size:10px; color:#991b1b; margin-top:4px; font-family:monospace; line-height:1.4;">
               </div>
             </div>
+
+            <!-- 対回観測計算成果 (Icode=2122の時のみ表示) -->
+            <div id="tsTaiKaiSection" style="display:none; margin-top:8px; background:#f0fdf4; border:1.5px solid #86efac; border-radius:6px; padding:8px 10px;">
+              <div style="font-weight:700; color:#166534; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">
+                <span>🎯 対回観測計算成果 (<span id="tsTaiKaiCount">0</span>点)</span>
+                <button id="btnRegisterTaiKai" style="background:#16a34a; color:white; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 既知点に登録</button>
+              </div>
+              <div id="tsTaiKaiList" style="font-size:10.5px; color:#14532d; font-family:monospace; margin-top:5px; max-height:80px; overflow-y:auto; line-height:1.35;"></div>
+            </div>
           </div>
         </div>
 
@@ -1288,7 +1297,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.3.8 (2026/11/23 00:25)</b>
+              アプリVer: <b id="settingsVerLabel">v1.4.0 (2026/11/23 00:50)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1936,6 +1945,27 @@ function initUi() {
               resCounts.textContent = `結線: ${expanded.lines.length}本 (点: ${o1kRes.points.length}個)`;
             }
 
+            // 対回観測成果 (Icode=2122) の反映
+            State.tsLastTaiKaiPoints = o1kRes.taiKaiPoints || [];
+            const taiKaiSec = document.getElementById('tsTaiKaiSection');
+            const taiKaiCountEl = document.getElementById('tsTaiKaiCount');
+            const taiKaiListEl = document.getElementById('tsTaiKaiList');
+            const btnRegTaiKai = document.getElementById('btnRegisterTaiKai');
+
+            if (taiKaiSec && taiKaiCountEl && taiKaiListEl && btnRegTaiKai) {
+              if (State.tsLastTaiKaiPoints.length > 0) {
+                taiKaiSec.style.display = 'block';
+                taiKaiCountEl.textContent = State.tsLastTaiKaiPoints.length;
+                taiKaiListEl.innerHTML = State.tsLastTaiKaiPoints.map(p =>
+                  `<div><b>${escapeHtml(p.name)}</b>: X=${p.x.toFixed(3)}, Y=${p.y.toFixed(3)}, H=${p.z.toFixed(3)}</div>`
+                ).join('');
+                btnRegTaiKai.disabled = false;
+                btnRegTaiKai.textContent = '＋ 既知点に登録';
+              } else {
+                taiKaiSec.style.display = 'none';
+              }
+            }
+
             // エラー・ブレイク表示
             const allErrors = (o1kRes.logs.filter(l => l.level === 'danger' || l.level === 'warning')).concat(
               expanded.errors.map(e => ({ level: 'danger', msg: e.msg }))
@@ -2054,6 +2084,52 @@ function initUi() {
   document.getElementById('btnDownloadT3dCsv').addEventListener('click', downloadT3dCsv);
   document.getElementById('btnZoomToTs').addEventListener('click', zoomToTsBounds);
   document.getElementById('btnClearTs').addEventListener('click', clearTsData);
+
+  // 対回観測成果 既知点一括登録ボタン
+  const btnRegTaiKai = document.getElementById('btnRegisterTaiKai');
+  if (btnRegTaiKai) {
+    btnRegTaiKai.addEventListener('click', () => {
+      if (!State.tsLastTaiKaiPoints || State.tsLastTaiKaiPoints.length === 0) {
+        showToast('登録可能な対回観測成果がありません');
+        return;
+      }
+      let addedCount = 0;
+      let updatedCount = 0;
+      State.tsLastTaiKaiPoints.forEach(tp => {
+        const existingIdx = State.knownPoints.findIndex(kp => kp.name === tp.name);
+        if (existingIdx >= 0) {
+          State.knownPoints[existingIdx] = {
+            ...State.knownPoints[existingIdx],
+            x: tp.x,
+            y: tp.y,
+            z: tp.z,
+            scale: tp.scale,
+            geoid: tp.geoid,
+            comment: tp.comment
+          };
+          updatedCount++;
+        } else {
+          State.knownPoints.push({
+            name: tp.name,
+            x: tp.x,
+            y: tp.y,
+            z: tp.z,
+            scale: tp.scale,
+            geoid: tp.geoid,
+            comment: tp.comment
+          });
+          addedCount++;
+        }
+      });
+      savePoints();
+      renderKnownPoints();
+      renderMarkers();
+      btnRegTaiKai.disabled = true;
+      btnRegTaiKai.textContent = '✓ 登録完了';
+      showToast(`対回観測成果: ${addedCount}件登録、${updatedCount}件更新しました`);
+    });
+  }
+
   document.getElementById('chkTsShowText').addEventListener('change', (e) => {
     if (e.target.checked) {
       if (!map.hasLayer(tsTextGroup)) map.addLayer(tsTextGroup);
@@ -3366,6 +3442,15 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
   let instScale = 1.0;
   let instGeoid = null;
 
+  // 対回観測用状態 (Icodeが2122の時のみ動作)
+  let isTaiKaiMode = false;
+  let taiKaiIcode = '';
+  let lstR1 = [];
+  let lstL1 = [];
+  let lstL2 = [];
+  let lstR2 = [];
+  const taiKaiPoints = [];
+
   const calculatedPoints = [];
   const logs = [];
   let lNum = 0;
@@ -3381,6 +3466,14 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
     if (recType === 'D') {
       currentInst = (data[1] || '').trim();
       Ihe = parseFloat(data[3]) || 0;
+      taiKaiIcode = (data[5] || '').trim();
+      // 対回観測モード判定: Icodeの先頭4文字が "2122" の時のみ有効
+      isTaiKaiMode = (taiKaiIcode.substring(0, 4) === '2122');
+      lstR1 = [];
+      lstL1 = [];
+      lstL2 = [];
+      lstR2 = [];
+
       instPoint = findKnownPointByName(currentInst);
       if (!instPoint) {
         logs.push({ level: 'danger', msg: `${lineNum}行目: 器械点「${currentInst}」が登録既知点に見つかりません。` });
@@ -3415,13 +3508,22 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
           instGeoid = null;
         }
 
+        const modeBadge = isTaiKaiMode ? '【対回観測(2122)】' : (taiKaiIcode ? `【条件コード:${taiKaiIcode}】` : '');
         logs.push({
           level: 'info',
-          msg: `${lineNum}行目: 器械点「${currentInst}」セット (X:${instPoint.x.toFixed(3)}, Y:${instPoint.y.toFixed(3)}, H:${(instPoint.z || instPoint.h || 0).toFixed(3)}${instScale ? ', 縮尺:' + instScale.toFixed(6) : ''}${instGeoid !== null ? ', ジオイド:' + instGeoid.toFixed(3) + 'm' : ''})`
+          msg: `${lineNum}行目: 器械点「${currentInst}」セット ${modeBadge} (X:${instPoint.x.toFixed(3)}, Y:${instPoint.y.toFixed(3)}, H:${(instPoint.z || instPoint.h || 0).toFixed(3)}${instScale ? ', 縮尺:' + instScale.toFixed(6) : ''}${instGeoid !== null ? ', ジオイド:' + instGeoid.toFixed(3) + 'm' : ''})`
         });
+
+        // 2122以外の対回コードに対する注意喚起
+        if (taiKaiIcode && !isTaiKaiMode && (taiKaiIcode.startsWith('19') || taiKaiIcode.startsWith('01') || taiKaiIcode.startsWith('10') || taiKaiIcode.startsWith('11') || taiKaiIcode.startsWith('12'))) {
+          logs.push({
+            level: 'warning',
+            msg: `${lineNum}行目: 対回観測パターン未対応 (コード:${taiKaiIcode.substring(0, 4)}、2122のみ対応)`
+          });
+        }
       }
     }
-    // F行: 観測点 (後視点 または 放射点)
+    // F行: 観測点 (対回観測 または 放射観測)
     else if (recType === 'F') {
       if (!flgKikai || !instPoint) {
         logs.push({ level: 'danger', msg: `${lineNum}行目: 器械点未設定のためスキップ` });
@@ -3429,111 +3531,255 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
       }
 
       const oc = (data[4] || '').trim();
-      const hasNine = (oc.length >= 2 && oc.charAt(1) === '9');
-      const isBackSight = !flgBack && (hasNine || findKnownPointByName(data[1]));
 
-      if (isBackSight) {
-        bsPointName = (data[1] || '').trim();
-        bsPoint = findKnownPointByName(bsPointName);
-        if (!bsPoint) {
-          logs.push({ level: 'danger', msg: `${lineNum}行目: 後視点「${bsPointName}」が登録既知点に見つかりません。` });
-          flgBack = false;
-        } else {
-          const rawBsAng = parseFloat(data[5]) || 0;
-          bsAng = degToRad(dmsToDeg(rawBsAng));
-
-          // 後視点方位角 (測量系: X=北, Y=東)
-          const dx = bsPoint.x - instPoint.x;
-          const dy = bsPoint.y - instPoint.y;
-          const bsA = Math.atan2(dy, dx);
-          const bsADeg = radToDeg(bsA);
-          bsAzi = degToRad(Math.floor(bsADeg * 3600.0) / 3600.0);
-
-          // 後視点チェック
-          const expectedDist = Math.hypot(dx, dy);
-          const th = parseFloat(data[3]) || 0;
-          let vz = dmsToDeg(parseFloat(data[6]) || 0);
-          if (vz > 180.0) vz = 180.0 - (vz - 180.0);
-          const rawSd = parseFloat(data[7]);
-
-          if (typeof rawSd === 'number' && !isNaN(rawSd)) {
-            let hd = rawSd * Math.sin(degToRad(vz));
-            const ed = rawSd * Math.cos(degToRad(vz));
-            const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
-            const bsZ = bsPoint.z !== undefined ? bsPoint.z : (bsPoint.h || 0);
-            const oph = (instZ + Ihe + ed) - th;
-
-            // 投影補正・縮尺補正 (器械点の事前保持値を使用)
-            if (instGeoid !== null) {
-              hd = hd * (R / (R + oph + instGeoid));
-            }
-            if (instScale) hd = hd * instScale;
-
-            const distDiff = Math.abs(expectedDist - hd);
-            const elevDiff = Math.abs(oph - bsZ);
-            if (distDiff >= 0.03) {
-              logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との距離差 ${(distDiff * 100).toFixed(1)}cm` });
-            }
-            if (elevDiff >= 0.03) {
-              logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との標高差 ${(elevDiff * 100).toFixed(1)}cm` });
-            }
-          }
-          flgBack = true;
-          logs.push({ level: 'info', msg: `${lineNum}行目: 後視点「${bsPointName}」照準完了` });
-        }
-      }
-      // 放射観測
-      else {
-        if (!flgBack || !bsPoint) {
-          logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点未照準のためスキップ` });
-          continue;
-        }
-
+      // 対回観測モード (Icode が 2122 の時のみ)
+      if (isTaiKaiMode) {
+        const ocSub = oc.substring(0, 2).toLowerCase();
         const pname = (data[1] || '').trim();
         const th = parseFloat(data[3]) || 0;
         let hz = dmsToDeg(parseFloat(data[5]) || 0);
         let vz = dmsToDeg(parseFloat(data[6]) || 0);
+        const sd = parseFloat(data[7]);
 
-        if (vz > 180.0) {
+        if (ocSub === 'r1') {
+          // 1対回目正 (r1001: 後視点, r1002〜: 観測点)
+          if (oc.toLowerCase() === 'r1001') {
+            bsPointName = pname;
+            bsPoint = findKnownPointByName(bsPointName);
+            if (!bsPoint) {
+              logs.push({ level: 'danger', msg: `${lineNum}行目: 対回後視点「${bsPointName}」が登録既知点に見つかりません。対回計算を中止します。` });
+              isTaiKaiMode = false;
+              lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
+              continue;
+            }
+          }
+          lstR1.push({ pname, th, hz, vz, sd, lineNum });
+        } else if (ocSub === 'l1') {
+          // 1対回目反 (望遠鏡転倒: l1002〜, l1001)
           vz = 180.0 - (vz - 180.0);
           hz = (hz + 180.0) % 360.0;
+          lstL1.unshift({ pname, th, hz, vz, sd, lineNum });
+        } else if (ocSub === 'l2') {
+          // 2対回目反 (l2001, l2002〜)
+          hz = (hz + 180.0) % 360.0;
+          lstL2.push({ pname, th, hz, vz, sd, lineNum });
+        } else if (ocSub === 'r2') {
+          // 2対回目正 (r2002〜, r2001)
+          lstR2.unshift({ pname, th, hz, vz, sd, lineNum });
+
+          // 2対回フルセット完了判定
+          if (lstR1.length >= 2 && lstR1.length === lstL1.length && lstR1.length === lstL2.length && lstR1.length === lstR2.length) {
+            // 後視点方位角算出 (測量系: X=北, Y=東)
+            const dx = bsPoint.x - instPoint.x;
+            const dy = bsPoint.y - instPoint.y;
+            const bsA = Math.atan2(dy, dx);
+            const bsADeg = radToDeg(bsA);
+            const bsAzi = degToRad(Math.floor(bsADeg * 3600.0) / 3600.0);
+
+            for (let curL = 1; curL < lstR1.length; curL++) {
+              const pR1 = lstR1[curL];
+              const pL1 = lstL1[curL];
+              const pL2 = lstL2[curL];
+              const pR2 = lstR2[curL];
+
+              // 第1対回水平角平均 (180度跨ぎ処理)
+              const diff1 = Math.abs(pR1.hz - pL1.hz);
+              let aveHZ1_abs;
+              if (diff1 >= 180.0) {
+                if (pR1.hz > pL1.hz) {
+                  aveHZ1_abs = ((pR1.hz - 360.0) + pL1.hz) / 2.0;
+                } else {
+                  aveHZ1_abs = (pR1.hz + (pL1.hz - 360.0)) / 2.0;
+                }
+              } else {
+                aveHZ1_abs = (pR1.hz + pL1.hz) / 2.0;
+              }
+              let aveHZ1 = aveHZ1_abs - lstR1[0].hz;
+              if (aveHZ1 < 0) aveHZ1 += 360.0;
+
+              // 第2対回水平角平均 (180度跨ぎ処理)
+              const diff2 = Math.abs(pR2.hz - pL2.hz);
+              let aveHZ2_abs;
+              if (diff2 >= 180.0) {
+                if (pR2.hz > pL2.hz) {
+                  aveHZ2_abs = ((pR2.hz - 360.0) + pL2.hz) / 2.0;
+                } else {
+                  aveHZ2_abs = (pR2.hz + (pL2.hz - 360.0)) / 2.0;
+                }
+              } else {
+                aveHZ2_abs = (pR2.hz + pL2.hz) / 2.0;
+              }
+              let aveHZ2 = aveHZ2_abs - lstL2[0].hz;
+              if (aveHZ2 < 0) aveHZ2 += 360.0;
+
+              // 対回間平均方向角
+              let aveHZ = (aveHZ1 + aveHZ2) / 2.0;
+              if (aveHZ < 0) aveHZ += 360.0;
+
+              // 鉛直角・斜距離平均 (第1対回観測)
+              const aveVZ = (pR1.vz + pL1.vz) / 2.0;
+              const aveSD = (pR1.sd + pL1.sd) / 2.0;
+
+              let hd = aveSD * Math.sin(degToRad(aveVZ));
+              const ed = aveSD * Math.cos(degToRad(aveVZ));
+              const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+              let oph = (instZ + Ihe + ed) - pR1.th;
+
+              // 投影補正・縮尺補正
+              if (instGeoid !== null) {
+                hd = hd * (R / (R + oph + instGeoid));
+              }
+              if (instScale) {
+                hd = hd * instScale;
+              }
+
+              const azi = bsAzi + degToRad(aveHZ);
+              const opx = instPoint.x + hd * Math.cos(azi);
+              const opy = instPoint.y + hd * Math.sin(azi);
+
+              const roundX = Math.round(opx * 1000) / 1000;
+              const roundY = Math.round(opy * 1000) / 1000;
+              const roundZ = Math.round(oph * 1000) / 1000;
+
+              lNum++;
+              calculatedPoints.push({
+                lineNum: lNum,
+                sourceLine: pR1.lineNum,
+                name: pR1.pname,
+                x: roundX,
+                y: roundY,
+                z: roundZ
+              });
+
+              taiKaiPoints.push({
+                name: pR1.pname,
+                x: roundX,
+                y: roundY,
+                z: roundZ,
+                scale: instScale,
+                geoid: instGeoid,
+                comment: `対回成果(器械点:${currentInst},後視点:${bsPointName})`
+              });
+
+              logs.push({
+                level: 'info',
+                msg: `🎯 対回成果算出: 点「${pR1.pname}」 X:${roundX.toFixed(3)}, Y:${roundY.toFixed(3)}, H:${roundZ.toFixed(3)}`
+              });
+            }
+
+            // 対回バッファリセット
+            lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
+          }
         }
+      }
+      // 通常の放射観測 (後視点 または 放射点)
+      else {
+        const hasNine = (oc.length >= 2 && oc.charAt(1) === '9');
+        const isBackSight = !flgBack && (hasNine || findKnownPointByName(data[1]));
 
-        const sd = parseFloat(data[7]);
-        if (isNaN(sd)) {
-          logs.push({ level: 'warning', msg: `${lineNum}行目: 斜距離データなし` });
-          continue;
+        if (isBackSight) {
+          bsPointName = (data[1] || '').trim();
+          bsPoint = findKnownPointByName(bsPointName);
+          if (!bsPoint) {
+            logs.push({ level: 'danger', msg: `${lineNum}行目: 後視点「${bsPointName}」が登録既知点に見つかりません。` });
+            flgBack = false;
+          } else {
+            const rawBsAng = parseFloat(data[5]) || 0;
+            bsAng = degToRad(dmsToDeg(rawBsAng));
+
+            // 後視点方位角 (測量系: X=北, Y=東)
+            const dx = bsPoint.x - instPoint.x;
+            const dy = bsPoint.y - instPoint.y;
+            const bsA = Math.atan2(dy, dx);
+            const bsADeg = radToDeg(bsA);
+            bsAzi = degToRad(Math.floor(bsADeg * 3600.0) / 3600.0);
+
+            // 後視点チェック
+            const expectedDist = Math.hypot(dx, dy);
+            const th = parseFloat(data[3]) || 0;
+            let vz = dmsToDeg(parseFloat(data[6]) || 0);
+            if (vz > 180.0) vz = 180.0 - (vz - 180.0);
+            const rawSd = parseFloat(data[7]);
+
+            if (typeof rawSd === 'number' && !isNaN(rawSd)) {
+              let hd = rawSd * Math.sin(degToRad(vz));
+              const ed = rawSd * Math.cos(degToRad(vz));
+              const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+              const bsZ = bsPoint.z !== undefined ? bsPoint.z : (bsPoint.h || 0);
+              const oph = (instZ + Ihe + ed) - th;
+
+              // 投影補正・縮尺補正 (器械点の事前保持値を使用)
+              if (instGeoid !== null) {
+                hd = hd * (R / (R + oph + instGeoid));
+              }
+              if (instScale) hd = hd * instScale;
+
+              const distDiff = Math.abs(expectedDist - hd);
+              const elevDiff = Math.abs(oph - bsZ);
+              if (distDiff >= 0.03) {
+                logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との距離差 ${(distDiff * 100).toFixed(1)}cm` });
+              }
+              if (elevDiff >= 0.03) {
+                logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との標高差 ${(elevDiff * 100).toFixed(1)}cm` });
+              }
+            }
+            flgBack = true;
+            logs.push({ level: 'info', msg: `${lineNum}行目: 後視点「${bsPointName}」照準完了` });
+          }
         }
+        // 放射観測新点
+        else {
+          if (!flgBack || !bsPoint) {
+            logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点未照準のためスキップ` });
+            continue;
+          }
 
-        let hd = sd * Math.sin(degToRad(vz));
-        const ed = sd * Math.cos(degToRad(vz));
-        const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
-        let oph = (instZ + Ihe + ed) - th;
+          const pname = (data[1] || '').trim();
+          const th = parseFloat(data[3]) || 0;
+          let hz = dmsToDeg(parseFloat(data[5]) || 0);
+          let vz = dmsToDeg(parseFloat(data[6]) || 0);
 
-        // 投影補正・縮尺補正 (器械点の事前保持値を使用)
-        if (instGeoid !== null) {
-          hd = hd * (R / (R + oph + instGeoid));
+          if (vz > 180.0) {
+            vz = 180.0 - (vz - 180.0);
+            hz = (hz + 180.0) % 360.0;
+          }
+
+          const sd = parseFloat(data[7]);
+          if (isNaN(sd)) {
+            logs.push({ level: 'warning', msg: `${lineNum}行目: 斜距離データなし` });
+            continue;
+          }
+
+          let hd = sd * Math.sin(degToRad(vz));
+          const ed = sd * Math.cos(degToRad(vz));
+          const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+          let oph = (instZ + Ihe + ed) - th;
+
+          // 投影補正・縮尺補正 (器械点の事前保持値を使用)
+          if (instGeoid !== null) {
+            hd = hd * (R / (R + oph + instGeoid));
+          }
+          if (instScale) hd = hd * instScale;
+
+          const azi = (bsAzi - bsAng) + degToRad(hz);
+          const opx = instPoint.x + hd * Math.cos(azi);
+          const opy = instPoint.y + hd * Math.sin(azi);
+
+          lNum++;
+          calculatedPoints.push({
+            lineNum: lNum,
+            sourceLine: lineNum,
+            name: pname,
+            x: Math.round(opx * 1000) / 1000,
+            y: Math.round(opy * 1000) / 1000,
+            z: Math.round(oph * 1000) / 1000
+          });
         }
-        if (instScale) hd = hd * instScale;
-
-        const azi = (bsAzi - bsAng) + degToRad(hz);
-        const opx = instPoint.x + hd * Math.cos(azi);
-        const opy = instPoint.y + hd * Math.sin(azi);
-
-        lNum++;
-        calculatedPoints.push({
-          lineNum: lNum,
-          sourceLine: lineNum,
-          name: pname,
-          x: Math.round(opx * 1000) / 1000,
-          y: Math.round(opy * 1000) / 1000,
-          z: Math.round(oph * 1000) / 1000
-        });
       }
     }
   }
 
-  return { points: calculatedPoints, logs };
+  return { points: calculatedPoints, taiKaiPoints, logs };
 }
 
 // --- T3D意味コード展開エンジン (結線ブレイク & 赤丸エラー描画対応) ---
@@ -3878,6 +4124,7 @@ function clearTsData() {
   State.tsLines = [];
   State.tsSnapPoints = [];
   State.tsLastO1kResult = null;
+  State.tsLastTaiKaiPoints = [];
 
   const fileO1k = document.getElementById('tsO1kInput');
   const fileCsv = document.getElementById('tsCsvInput');
@@ -3886,6 +4133,8 @@ function clearTsData() {
 
   const resPanel = document.getElementById('tsResultPanel');
   if (resPanel) resPanel.style.display = 'none';
+  const taiKaiSec = document.getElementById('tsTaiKaiSection');
+  if (taiKaiSec) taiKaiSec.style.display = 'none';
   document.getElementById('btnDownloadT3dCsv').disabled = true;
   document.getElementById('btnZoomToTs').disabled = true;
   document.getElementById('btnClearTs').disabled = true;
