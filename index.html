@@ -565,12 +565,50 @@
       z-index: 11;
       pointer-events: auto;
     }
+    /* TS新規展開レイヤーの明滅（パルス点滅）アニメーション */
+    @keyframes ts-pulse {
+      0% {
+        opacity: 1;
+        filter: drop-shadow(0 0 5px rgba(2, 132, 199, 0.85));
+      }
+      50% {
+        opacity: 0.38;
+        filter: drop-shadow(0 0 1px rgba(2, 132, 199, 0.2));
+      }
+      100% {
+        opacity: 1;
+        filter: drop-shadow(0 0 5px rgba(2, 132, 199, 0.85));
+      }
+    }
+    .ts-pulse-anim {
+      animation: ts-pulse 1.8s ease-in-out infinite !important;
+    }
+
     .ts-text-label,
     .ts-error-label {
       background: transparent !important;
       border: none !important;
       white-space: nowrap !important;
       overflow: visible !important;
+    }
+    .ts-label-badge {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(2px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      line-height: 1.25;
+      pointer-events: auto;
+      user-select: none;
+    }
+    .ts-label-badge.error {
+      background: #fef2f2 !important;
+      border: 1.5px solid #ef4444 !important;
+      color: #991b1b !important;
+      font-weight: 800 !important;
     }
 
     /* Floating Tool Panels (Measure & Stakeout Navigation) */
@@ -788,7 +826,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.7 (2026/11/23 00:10)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.8 (2026/11/23 00:25)</span>
     </div>
   </div>
 
@@ -1250,7 +1288,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.3.7 (2026/11/23 00:10)</b>
+              アプリVer: <b id="settingsVerLabel">v1.3.8 (2026/11/23 00:25)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -3665,7 +3703,8 @@ function renderTsLayers(expandedData, showText = true) {
       opacity: 0.9,
       dashArray: l.dashArray || null,
       fill: false,
-      interactive: false
+      interactive: false,
+      className: 'ts-pulse-anim'
     };
 
     const poly = l.isClosed
@@ -3689,11 +3728,11 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
 
-      // 注記テキスト表示
+      // 注記テキスト表示 (明滅バッジ)
       if (showText && p.naiyou) {
         const textIcon = L.divIcon({
-          className: 'ts-text-label',
-          html: `<div style="font-size:10px; color:${l.color}; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${escapeHtml(p.naiyou)}</div>`,
+          className: 'ts-text-label ts-pulse-anim',
+          html: `<div class="ts-label-badge" style="color:${l.color}; border:1.5px solid ${l.color};">${escapeHtml(p.naiyou)}</div>`,
           iconAnchor: [-4, 6]
         });
         tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: textIcon, interactive: false }));
@@ -3704,22 +3743,34 @@ function renderTsLayers(expandedData, showText = true) {
   // 2. 単独点・標高点・赤丸エラー点
   points.forEach(p => {
     if (p.isError) {
-      // 赤丸エラー点 (点名・コードを赤文字で併記)
+      // 赤丸エラー点 (半径8、白フチ、明滅パルスアニメーション)
       const errMarker = L.circleMarker([p.lat, p.lng], {
-        radius: 6,
+        radius: 8,
         color: '#ffffff',
         weight: 2,
         fillColor: '#ef4444',
         fillOpacity: 1,
-        interactive: false
+        className: 'ts-pulse-anim',
+        interactive: true
       });
+      errMarker.bindPopup(`
+        <div style="font-size:12px; min-width:140px;">
+          <b style="color:#ef4444; font-size:13px;">⚠️ ${escapeHtml(p.name)} (エラー点)</b><br>
+          <div style="font-family:monospace; margin:4px 0;">
+            X: ${p.x.toFixed(3)} m<br>
+            Y: ${p.y.toFixed(3)} m<br>
+            H: ${typeof p.z === 'number' ? p.z.toFixed(3) + ' m' : '---'}
+          </div>
+          <div style="font-size:10px; color:#64748b;">理由: 未定義コードまたは結線ブレイク</div>
+        </div>
+      `);
       tsLayerGroup.addLayer(errMarker);
 
       if (showText) {
         const errIcon = L.divIcon({
-          className: 'ts-error-label',
-          html: `<div style="font-size:10px; color:#b91c1c; font-weight:800; background:#fee2e2; border:1px solid #f87171; border-radius:3px; padding:1px 4px; white-space:nowrap; pointer-events:none;">⚠️ ${escapeHtml(p.name)}</div>`,
-          iconAnchor: [-6, 6]
+          className: 'ts-error-label ts-pulse-anim',
+          html: `<div class="ts-label-badge error">⚠️ ${escapeHtml(p.name)}</div>`,
+          iconAnchor: [-8, 6]
         });
         tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: errIcon, interactive: false }));
       }
@@ -3736,29 +3787,41 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
     } else {
-      // 正常なシンボル・標高点
+      // 正常なシンボル・標高点 (ご指定通り 半径8、白フチ、明滅パルスアニメーション)
       const marker = L.circleMarker([p.lat, p.lng], {
-        radius: p.isElevation ? 3.5 : 4.5,
+        radius: 8,
         color: '#ffffff',
-        weight: 1.5,
+        weight: 2,
         fillColor: p.color || '#0284c7',
         fillOpacity: 0.95,
-        interactive: false
+        className: 'ts-pulse-anim',
+        interactive: true
       });
+      marker.bindPopup(`
+        <div style="font-size:12px; min-width:140px;">
+          <b style="color:${p.color || '#0284c7'}; font-size:13px;">${escapeHtml(p.name)}</b><br>
+          <div style="font-family:monospace; margin:4px 0;">
+            X: ${p.x.toFixed(3)} m<br>
+            Y: ${p.y.toFixed(3)} m<br>
+            H: ${typeof p.z === 'number' ? p.z.toFixed(3) + ' m' : '---'}
+          </div>
+          <div style="font-size:10px; color:#64748b;">画層: ${escapeHtml(p.layer || 'TS観測点')}</div>
+        </div>
+      `);
       tsLayerGroup.addLayer(marker);
 
       if (showText) {
         let labelHtml = '';
         if (p.isElevation) {
           const elevStr = typeof p.z === 'number' ? p.z.toFixed(3) : '';
-          labelHtml = `<div style="font-size:9.5px; color:#0369a1; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${elevStr}${p.name ? ' ' + escapeHtml(p.name) : ''}</div>`;
+          labelHtml = `<div class="ts-label-badge" style="color:#0369a1; border:1.5px solid #0284c7;">${elevStr}${p.name ? ' ' + escapeHtml(p.name) : ''}</div>`;
         } else {
-          labelHtml = `<div style="font-size:10px; color:${p.color}; font-weight:700; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${escapeHtml(p.name)}</div>`;
+          labelHtml = `<div class="ts-label-badge" style="color:${p.color || '#0284c7'}; border:1.5px solid ${p.color || '#0284c7'};">${escapeHtml(p.name)}</div>`;
         }
         const textIcon = L.divIcon({
-          className: 'ts-text-label',
+          className: 'ts-text-label ts-pulse-anim',
           html: labelHtml,
-          iconAnchor: [-5, 5]
+          iconAnchor: [-8, 6]
         });
         tsTextGroup.addLayer(L.marker([p.lat, p.lng], { icon: textIcon, interactive: false }));
       }
@@ -3793,7 +3856,11 @@ function zoomToTsBounds() {
   }
   const bounds = tsLayerGroup.getBounds();
   if (bounds && bounds.isValid()) {
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 22, animate: true });
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+      map.setView(bounds.getCenter(), 19, { animate: true });
+    } else {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 20, animate: true });
+    }
     document.getElementById('bottomBar').classList.remove('expanded');
     document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
     showToast('TS展開図面にズームしました');
