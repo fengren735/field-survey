@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.5 (2026/11/22 10:50)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.6 (2026/11/22 11:07)</span>
     </div>
   </div>
 
@@ -662,11 +662,62 @@
 
         <!-- Tab 1: Known Points List -->
         <div class="tab-panel active" id="tab-points">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <!-- 手入力クイック追加カード -->
+          <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:10px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <b style="font-size:12px; color:var(--primary); display:flex; align-items:center; gap:4px;">✍️ 既知点の手入力登録</b>
+              <span style="font-size:10px; color:var(--text-muted);" id="inlineAxisHint">測量系 (X=北, Y=東)</span>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">点名 (任意)</label>
+                <input type="text" id="inlinePointName" class="input-text" placeholder="例: K-01, No.1" style="padding:6px 8px; font-size:12px;">
+              </div>
+              <div class="form-group">
+                <label class="form-label">適用系</label>
+                <select id="inlinePointZone" class="select-box" style="padding:6px 8px; font-size:12px;">
+                  <!-- 1〜19系 -->
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" id="inlineLabelX">X座標 (北 m)</label>
+                <input type="text" inputmode="decimal" id="inlineCoordX" class="input-text" placeholder="例: -30200.123" style="padding:6px 8px; font-size:12px; font-family:monospace;">
+              </div>
+              <div class="form-group">
+                <label class="form-label" id="inlineLabelY">Y座標 (東 m)</label>
+                <input type="text" inputmode="decimal" id="inlineCoordY" class="input-text" placeholder="例: -7370.456" style="padding:6px 8px; font-size:12px; font-family:monospace;">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Z標高 (m, 任意)</label>
+                <input type="text" inputmode="decimal" id="inlineCoordH" class="input-text" placeholder="例: 19.500" style="padding:6px 8px; font-size:12px; font-family:monospace;">
+              </div>
+              <div style="display:flex; align-items:flex-end; gap:4px;">
+                <button class="btn btn-secondary btn-sm" id="btnInlineFetchElev" style="height:33px; font-size:11px; padding:4px 6px; flex:1;" title="入力したXYから国土地理院の標高を取得">
+                  ⛰️ 標高取得
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btnInlineFillCurrent" style="height:33px; font-size:11px; padding:4px 6px; flex:1;" title="現在のGPS座標を流し込み">
+                  📍 現在地
+                </button>
+              </div>
+            </div>
+
+            <button class="btn btn-primary btn-sm" id="btnInlineSavePoint" style="width:100%; padding:8px; font-size:12px; margin-top:2px;">
+              ➕ この既知点を登録する
+            </button>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
             <label style="font-size:11px; display:flex; align-items:center; gap:5px; color:var(--text); font-weight:600; cursor:pointer;">
               <input type="checkbox" id="chkShowPointNames" checked> 地図上に点名を表示
             </label>
-            <button class="btn btn-danger btn-sm" id="btnClearAllPoints">全消去</button>
+            <button class="btn btn-danger btn-sm" id="btnClearAllPoints" style="padding:3px 8px; font-size:11px;">全消去</button>
           </div>
           <div class="point-list" id="pointListContainer">
             <div style="text-align:center; padding:15px; color:var(--text-muted); font-size:12px;">既知点はまだ登録されていません</div>
@@ -805,7 +856,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.5 (2026/11/22 10:50)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.6 (2026/11/22 11:07)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -832,18 +883,18 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" id="modalLabelX">X座標 (m)</label>
-          <input type="number" step="0.001" id="modalCoordX" class="input-text" placeholder="0.000">
+          <input type="text" inputmode="decimal" id="modalCoordX" class="input-text" placeholder="例: -30200.123">
         </div>
         <div class="form-group">
           <label class="form-label" id="modalLabelY">Y座標 (m)</label>
-          <input type="number" step="0.001" id="modalCoordY" class="input-text" placeholder="0.000">
+          <input type="text" inputmode="decimal" id="modalCoordY" class="input-text" placeholder="例: -7370.456">
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">標高 H (m)</label>
-          <input type="number" step="0.001" id="modalCoordH" class="input-text" placeholder="0.000">
+          <label class="form-label">標高 Z/H (m)</label>
+          <input type="text" inputmode="decimal" id="modalCoordH" class="input-text" placeholder="例: 19.500">
         </div>
         <div class="form-group">
           <label class="form-label">適用系</label>
@@ -931,6 +982,17 @@ const State = {
 };
 
 // --- 3. ユーティリティ関数 ---
+// 数値入力の正規化 (全角数字・全角マイナス・全角小数点を半角に自動変換)
+function normalizeNumberStr(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/[ー−―‐]/g, '-')
+    .replace(/[．。]/g, '.')
+    .replace(/,/g, '')
+    .trim();
+}
+
 // 数値の3桁カンマ区切りフォーマット (例: -30208.681 -> -30,208.681)
 function formatCoord(num, decimals = 3) {
   if (num === null || num === undefined || isNaN(num) || num === '') return '---';
@@ -1099,6 +1161,7 @@ function initUi() {
   const selZone = document.getElementById('selectZone');
   const modalZone = document.getElementById('modalZone');
   const dxfZone = document.getElementById('dxfZoneSelect');
+  const inlineZone = document.getElementById('inlinePointZone');
 
   JGD_ZONES.forEach(z => {
     const opt1 = document.createElement('option');
@@ -1115,11 +1178,17 @@ function initUi() {
     opt3.value = z.id;
     opt3.textContent = `${z.name} (${z.desc})`;
     if (dxfZone) dxfZone.appendChild(opt3);
+
+    const opt4 = document.createElement('option');
+    opt4.value = z.id;
+    opt4.textContent = `${z.name} (${z.desc})`;
+    if (inlineZone) inlineZone.appendChild(opt4);
   });
 
   selZone.value = State.currentZoneId;
   modalZone.value = State.currentZoneId;
   if (dxfZone) dxfZone.value = State.currentZoneId;
+  if (inlineZone) inlineZone.value = State.currentZoneId;
   State.dxfZoneId = State.currentZoneId;
 
   // ローカルストレージ復元
@@ -1228,6 +1297,11 @@ function initUi() {
   document.getElementById('btnFillCurrentPos').addEventListener('click', fillModalWithCurrentPos);
   document.getElementById('btnFetchElevForModal').addEventListener('click', fetchElevForModal);
 
+  // インライン手入力フォーム
+  document.getElementById('btnInlineSavePoint').addEventListener('click', savePointFromInline);
+  document.getElementById('btnInlineFillCurrent').addEventListener('click', fillInlineWithCurrentPos);
+  document.getElementById('btnInlineFetchElev').addEventListener('click', fetchElevForInline);
+
   // CSV
   document.getElementById('csvAxisSelect').addEventListener('change', (e) => {
     State.isSurveyAxis = (e.target.value === 'survey');
@@ -1295,6 +1369,13 @@ function updateAxisLabels() {
 
   document.getElementById('modalLabelX').textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
   document.getElementById('modalLabelY').textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
+
+  const inLblX = document.getElementById('inlineLabelX');
+  const inLblY = document.getElementById('inlineLabelY');
+  const inHint = document.getElementById('inlineAxisHint');
+  if (inLblX) inLblX.textContent = isSur ? "X座標 (北 m)" : "X座標 (東 m)";
+  if (inLblY) inLblY.textContent = isSur ? "Y座標 (東 m)" : "Y座標 (北 m)";
+  if (inHint) inHint.textContent = isSur ? "測量系 (X=北, Y=東)" : "数学系 (X=東, Y=北)";
 
   // DXFが読み込み済みなら軸・系変更に合わせて再描画
   if (State.dxfData) {
@@ -1988,9 +2069,11 @@ async function fetchElevForModal() {
 function savePointFromModal() {
   const editId = document.getElementById('editPointId').value;
   const name = document.getElementById('modalPointName').value.trim();
-  const x = parseFloat(document.getElementById('modalCoordX').value);
-  const y = parseFloat(document.getElementById('modalCoordY').value);
-  const hRaw = document.getElementById('modalCoordH').value;
+  const xRaw = normalizeNumberStr(document.getElementById('modalCoordX').value);
+  const yRaw = normalizeNumberStr(document.getElementById('modalCoordY').value);
+  const hRaw = normalizeNumberStr(document.getElementById('modalCoordH').value);
+  const x = parseFloat(xRaw);
+  const y = parseFloat(yRaw);
   const h = hRaw !== '' ? parseFloat(hRaw) : null;
   const zoneId = parseInt(document.getElementById('modalZone').value, 10);
 
@@ -2032,6 +2115,98 @@ function savePointFromModal() {
   savePoints();
   renderKnownPoints();
   closeModal();
+}
+
+// --- インライン手入力フォーム処理 ---
+function savePointFromInline() {
+  const name = document.getElementById('inlinePointName').value.trim();
+  const xRaw = normalizeNumberStr(document.getElementById('inlineCoordX').value);
+  const yRaw = normalizeNumberStr(document.getElementById('inlineCoordY').value);
+  const hRaw = normalizeNumberStr(document.getElementById('inlineCoordH').value);
+
+  const x = parseFloat(xRaw);
+  const y = parseFloat(yRaw);
+  const h = hRaw !== '' ? parseFloat(hRaw) : null;
+  const zoneId = parseInt(document.getElementById('inlinePointZone').value, 10);
+
+  if (isNaN(x) || isNaN(y)) {
+    alert('X座標とY座標を正しい数値で入力してください。');
+    return;
+  }
+
+  const newPt = {
+    id: 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    name: name || `点 #${State.knownPoints.length + 1}`,
+    x: x,
+    y: y,
+    h: h,
+    zoneId: zoneId,
+    isSurveySaved: State.isSurveyAxis
+  };
+
+  State.knownPoints.push(newPt);
+  savePoints();
+  renderKnownPoints();
+
+  // 入力欄をクリア (点名は次点用に連番で補完)
+  document.getElementById('inlinePointName').value = '';
+  document.getElementById('inlineCoordX').value = '';
+  document.getElementById('inlineCoordY').value = '';
+  document.getElementById('inlineCoordH').value = '';
+
+  showToast(`既知点「${newPt.name}」を手入力登録しました`);
+
+  // 地図上でその点を表示
+  if (typeof newPt.lat === 'number' && typeof newPt.lng === 'number') {
+    map.setView([newPt.lat, newPt.lng], 18, { animate: true });
+  }
+}
+
+function fillInlineWithCurrentPos() {
+  if (!State.currentPosition) {
+    alert('現在地がまだ測位されていません。先に「GPS測位開始」を押してください。');
+    return;
+  }
+  const isSur = State.isSurveyAxis;
+  const p = State.currentPosition;
+  document.getElementById('inlineCoordX').value = (isSur ? p.surveyX : p.mathX).toFixed(3);
+  document.getElementById('inlineCoordY').value = (isSur ? p.surveyY : p.mathY).toFixed(3);
+
+  const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
+  if (hVal !== null) {
+    document.getElementById('inlineCoordH').value = Number(hVal).toFixed(3);
+  }
+  document.getElementById('inlinePointZone').value = State.currentZoneId;
+  const srcName = p.gsiH !== null ? '地理院T.P.' : (p.gpsH !== null ? 'GPS' : 'なし');
+  showToast(`現在地の座標を反映 (H: ${srcName})`);
+}
+
+async function fetchElevForInline() {
+  const xRaw = normalizeNumberStr(document.getElementById('inlineCoordX').value);
+  const yRaw = normalizeNumberStr(document.getElementById('inlineCoordY').value);
+  const xVal = parseFloat(xRaw);
+  const yVal = parseFloat(yRaw);
+  const zoneId = parseInt(document.getElementById('inlinePointZone').value, 10);
+
+  if (isNaN(xVal) || isNaN(yVal)) {
+    alert('先にX座標とY座標を入力してください。');
+    return;
+  }
+
+  showToast('国土地理院 標高APIを取得中...');
+  const latlng = xyToLatLng(xVal, yVal, zoneId, State.isSurveyAxis);
+  if (!latlng) {
+    alert('座標変換に失敗しました。');
+    return;
+  }
+
+  const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
+  if (elevRes && typeof elevRes.h === 'number') {
+    document.getElementById('inlineCoordH').value = elevRes.h.toFixed(3);
+    showToast(`標高を取得しました (T.P. ${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
+  } else {
+    alert('標高データを取得できませんでした (海域またはAPI一時不可)。');
+  }
 }
 
 // --- 8. CSV インポート / エクスポート ---
