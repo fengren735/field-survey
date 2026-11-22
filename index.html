@@ -778,7 +778,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.3 (2026/11/22 20:05)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.4 (2026/11/22 20:15)</span>
     </div>
   </div>
 
@@ -890,6 +890,14 @@
           <div class="coord-cell" style="border-top:1px dashed #bae6fd; padding-top:3px; margin-top:2px;">
             <span class="coord-cell-label" style="color:#0369a1;">夾角(内角):</span>
             <span class="coord-val" id="dispMeasureAngle" style="color:#0284c7;">---</span>
+          </div>
+          <div class="coord-cell" id="measureCadZCell" style="border-top:1px dashed #bae6fd; padding-top:3px; margin-top:2px; display:none;">
+            <span class="coord-cell-label" style="color:#059669; font-weight:bold;">CAD Z:</span>
+            <span class="coord-val" id="dispMeasureCadZ" style="color:#047857; font-weight:800;">---</span>
+          </div>
+          <div class="coord-cell" id="measureDiffZCell" style="border-top:1px dashed #bae6fd; padding-top:3px; margin-top:2px; display:none;">
+            <span class="coord-cell-label" style="color:#059669; font-weight:bold;">比高(ΔZ):</span>
+            <span class="coord-val" id="dispMeasureDiffZ" style="color:#047857; font-weight:800;">---</span>
           </div>
         </div>
 
@@ -1132,7 +1140,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.3.3 (2026/11/22 20:05)</b>
+              アプリVer: <b id="settingsVerLabel">v1.3.4 (2026/11/22 20:15)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2238,7 +2246,7 @@ function parseBinaryDxf(buffer) {
           }
         }
 
-        // 座標値 (X, Y)
+        // 座標値 (X, Y, Z)
         if (code === 10) currentEntity.tempX = val;
         if (code === 20) {
           currentEntity.tempY = val;
@@ -2246,21 +2254,34 @@ function parseBinaryDxf(buffer) {
             currentEntity.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
           } else if (currentEntity.type === 'VERTEX' && currentPolyline) {
             currentPolyline.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
-          } else if (currentEntity.type === 'POINT') {
+          } else if (currentEntity.type === 'POINT' || currentEntity.type === 'INSERT') {
             currentEntity.position = { x: currentEntity.tempX, y: currentEntity.tempY };
           } else if (currentEntity.type === 'TEXT' || currentEntity.type === 'MTEXT') {
             currentEntity.startPoint = { x: currentEntity.tempX, y: currentEntity.tempY };
           }
         }
+        if (code === 30) {
+          currentEntity.tempZ = val;
+          if (currentEntity.position) currentEntity.position.z = val;
+          if (currentEntity.type === 'LWPOLYLINE' && currentEntity.vertices.length > 0) {
+            currentEntity.vertices[currentEntity.vertices.length - 1].z = val;
+          } else if (currentEntity.type === 'VERTEX' && currentPolyline && currentPolyline.vertices.length > 0) {
+            currentPolyline.vertices[currentPolyline.vertices.length - 1].z = val;
+          }
+        }
+        if (code === 38) currentEntity.elevation = val; // 標高
         if (code === 11) currentEntity.tempX2 = val;
         if (code === 21) {
           currentEntity.tempY2 = val;
           if (currentEntity.type === 'LINE') {
             currentEntity.vertices = [
-              { x: currentEntity.tempX, y: currentEntity.tempY },
-              { x: currentEntity.tempX2, y: currentEntity.tempY2 }
+              { x: currentEntity.tempX, y: currentEntity.tempY, z: currentEntity.tempZ || 0 },
+              { x: currentEntity.tempX2, y: currentEntity.tempY2, z: 0 }
             ];
           }
+        }
+        if (code === 31 && currentEntity.type === 'LINE' && currentEntity.vertices && currentEntity.vertices.length >= 2) {
+          currentEntity.vertices[1].z = val;
         }
         if (code === 1) currentEntity.text = val;
         if (code === 70 && (val === 1 || val === 129)) {
@@ -2434,21 +2455,32 @@ function parseDxfFallback(text) {
         currentEntity.tempY = parseFloat(val);
         if (currentEntity.type === 'LWPOLYLINE' || currentEntity.type === 'POLYLINE') {
           currentEntity.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
-        } else if (currentEntity.type === 'POINT') {
+        } else if (currentEntity.type === 'POINT' || currentEntity.type === 'INSERT') {
           currentEntity.position = { x: currentEntity.tempX, y: currentEntity.tempY };
         } else if (currentEntity.type === 'TEXT' || currentEntity.type === 'MTEXT') {
           currentEntity.startPoint = { x: currentEntity.tempX, y: currentEntity.tempY };
         }
       }
+      if (code === 30) {
+        currentEntity.tempZ = parseFloat(val);
+        if (currentEntity.position) currentEntity.position.z = currentEntity.tempZ;
+        if (currentEntity.vertices && currentEntity.vertices.length > 0) {
+          currentEntity.vertices[currentEntity.vertices.length - 1].z = currentEntity.tempZ;
+        }
+      }
+      if (code === 38) currentEntity.elevation = parseFloat(val);
       if (code === 11) currentEntity.tempX2 = parseFloat(val);
       if (code === 21) {
         currentEntity.tempY2 = parseFloat(val);
         if (currentEntity.type === 'LINE') {
           currentEntity.vertices = [
-            { x: currentEntity.tempX, y: currentEntity.tempY },
-            { x: currentEntity.tempX2, y: currentEntity.tempY2 }
+            { x: currentEntity.tempX, y: currentEntity.tempY, z: currentEntity.tempZ || 0 },
+            { x: currentEntity.tempX2, y: currentEntity.tempY2, z: 0 }
           ];
         }
+      }
+      if (code === 31 && currentEntity.type === 'LINE' && currentEntity.vertices && currentEntity.vertices.length >= 2) {
+        currentEntity.vertices[1].z = parseFloat(val);
       }
       if (code === 1) currentEntity.text = val;
       if (code === 70 && (val === '1' || val === '129')) currentEntity.shape = true; // closed
@@ -2778,13 +2810,16 @@ function buildDxfSnapPointsCache() {
       const ll = xyToLatLng(ent.position.x, ent.position.y, zoneId, isSur);
       if (ll) {
         const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
+        const zVal = (typeof ent.position.z === 'number' && !isNaN(ent.position.z)) ? ent.position.z : null;
         cache.push({
           lat: ll.lat,
           lng: ll.lng,
           x: curSur.surveyX,
           y: curSur.surveyY,
+          z: zVal,
           name: `点 (${lyr})`,
           type: '点',
+          layer: lyr,
           source: 'dxf'
         });
       }
@@ -2797,13 +2832,16 @@ function buildDxfSnapPointsCache() {
       if (ll) {
         const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
         const blkName = ent.name || lyr || 'ブロック';
+        const zVal = (typeof pos.z === 'number' && !isNaN(pos.z)) ? pos.z : null;
         cache.push({
           lat: ll.lat,
           lng: ll.lng,
           x: curSur.surveyX,
           y: curSur.surveyY,
+          z: zVal,
           name: `ブロック (${blkName})`,
           type: 'ブロック',
+          layer: lyr,
           source: 'dxf'
         });
       }
@@ -2816,11 +2854,13 @@ function buildDxfSnapPointsCache() {
         const ll = xyToLatLng(v.x, v.y, zoneId, isSur);
         if (ll) {
           const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
+          const zVal = (typeof v.z === 'number' && !isNaN(v.z)) ? v.z : null;
           cache.push({
             lat: ll.lat,
             lng: ll.lng,
             x: curSur.surveyX,
             y: curSur.surveyY,
+            z: zVal,
             name: `端点 (${lyr})`,
             type: '端点',
             layer: lyr,
@@ -2839,11 +2879,13 @@ function buildDxfSnapPointsCache() {
         if (ll) {
           const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
           const isEnd = (j === 0 || j === vLen - 1);
+          const zVal = (typeof v.z === 'number' && !isNaN(v.z)) ? v.z : ((typeof ent.elevation === 'number' && !isNaN(ent.elevation)) ? ent.elevation : null);
           cache.push({
             lat: ll.lat,
             lng: ll.lng,
             x: curSur.surveyX,
             y: curSur.surveyY,
+            z: zVal,
             name: `${isEnd ? '端点' : '頂点'} (${lyr})`,
             type: isEnd ? '端点' : '頂点',
             layer: lyr,
@@ -2879,6 +2921,7 @@ function findNearestSnapPoint(clickLatLng, maxPixelDist = 32) {
           lng: kp.lng,
           x: kp.x,
           y: kp.y,
+          z: (typeof kp.h === 'number' && !isNaN(kp.h)) ? kp.h : (parseFloat(kp.h) || null),
           name: kp.name || '既知点',
           type: '既知点',
           source: 'known'
@@ -3096,6 +3139,40 @@ function updateMeasureCardUi() {
       perimeter += Math.hypot(pts[nextIdx].x - pts[i].x, pts[nextIdx].y - pts[i].y);
     }
     if (perimeterEl) perimeterEl.textContent = `${perimeter.toFixed(3)} m (閉合)`;
+  }
+
+  // 3. スナップ点に CAD Z (標高) がある場合の表示 & 比高 (ΔZ)
+  const cadZCell = document.getElementById('measureCadZCell');
+  const cadZEl = document.getElementById('dispMeasureCadZ');
+  const diffZCell = document.getElementById('measureDiffZCell');
+  const diffZEl = document.getElementById('dispMeasureDiffZ');
+
+  const lastPt = pts.length > 0 ? pts[pts.length - 1] : null;
+  const hasZ = lastPt && typeof lastPt.z === 'number' && !isNaN(lastPt.z);
+  if (cadZCell && cadZEl) {
+    if (hasZ) {
+      cadZCell.style.display = 'flex';
+      cadZEl.textContent = `${lastPt.z.toFixed(3)} m`;
+    } else {
+      cadZCell.style.display = 'none';
+    }
+  }
+
+  if (diffZCell && diffZEl) {
+    if (pts.length >= 2) {
+      const pPrev = pts[pts.length - 2];
+      const pCurr = pts[pts.length - 1];
+      if (typeof pPrev.z === 'number' && !isNaN(pPrev.z) && typeof pCurr.z === 'number' && !isNaN(pCurr.z)) {
+        diffZCell.style.display = 'flex';
+        const dz = pCurr.z - pPrev.z;
+        const sign = dz > 0 ? '+' : '';
+        diffZEl.textContent = `${sign}${dz.toFixed(3)} m`;
+      } else {
+        diffZCell.style.display = 'none';
+      }
+    } else {
+      diffZCell.style.display = 'none';
+    }
   }
 }
 
@@ -3840,7 +3917,7 @@ function loadSettingsAndPoints() {
 // --- 地図クリックイベント (スナップ計測 / 通常タップ & 逆打ち誘導) ---
 map.on('click', async (e) => {
   // 1. スナップ探索 (指先28px以内の最近傍CAD端点/頂点/点/既知点)
-  const snapPt = findNearestSnapPoint(e.latlng, 28);
+  const snapPt = findNearestSnapPoint(e.latlng, 32);
   if (snapPt) {
     triggerSnapFeedback(snapPt);
   }
@@ -3855,6 +3932,7 @@ map.on('click', async (e) => {
         lng: e.latlng.lng,
         x: xy.surveyX,
         y: xy.surveyY,
+        z: null,
         name: `計測点-${State.measurePoints.length + 1}`,
         type: '任意点'
       };
@@ -3883,13 +3961,17 @@ map.on('click', async (e) => {
     ? `<div style="background:#fef08a; color:#854d0e; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:11px; display:inline-block; margin-bottom:2px;">🎯 O-SNAP: ${escapeHtml(snapPt.name)}</div>`
     : `<b style="color:var(--primary); font-size:13px;">📍 地図タップ地点</b>`;
 
+  const cadZHtml = (snapPt && typeof snapPt.z === 'number' && !isNaN(snapPt.z))
+    ? `<br><span style="color:#059669; font-weight:bold;">CAD Z: ${formatCoord(snapPt.z, 3)} m</span>`
+    : '';
+
   container.innerHTML = `
     ${titleBadge}
     <div style="font-family:monospace; margin:4px 0;">
       緯度経度: ${useLat.toFixed(6)}°, ${useLng.toFixed(6)}°<br>
       X: ${formatCoord(x, 3)} m<br>
       Y: ${formatCoord(y, 3)} m<br>
-      標高(T.P.): <b class="popup-elev-text" style="color:#0369a1;">取得中...</b>
+      標高(T.P.): <b class="popup-elev-text" style="color:#0369a1;">取得中...</b>${cadZHtml}
     </div>
     <div style="display:flex; gap:6px; margin-top:6px;">
       <button class="btn btn-primary btn-sm btn-tap-add" style="flex:1;">
@@ -3920,7 +4002,9 @@ map.on('click', async (e) => {
     document.getElementById('modalCoordX').value = x.toFixed(3);
     document.getElementById('modalCoordY').value = y.toFixed(3);
     document.getElementById('modalZone').value = State.currentZoneId;
-    if (tappedElev !== null) {
+    if (snapPt && typeof snapPt.z === 'number' && !isNaN(snapPt.z)) {
+      document.getElementById('modalCoordH').value = Number(snapPt.z).toFixed(3);
+    } else if (tappedElev !== null) {
       document.getElementById('modalCoordH').value = Number(tappedElev).toFixed(3);
     }
   };
