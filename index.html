@@ -778,7 +778,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.2 (2026/11/22 16:40)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.3 (2026/11/22 20:05)</span>
     </div>
   </div>
 
@@ -1132,7 +1132,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.3.2 (2026/11/22 16:40)</b>
+              アプリVer: <b id="settingsVerLabel">v1.3.3 (2026/11/22 20:05)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1253,6 +1253,7 @@ const State = {
   dxfLayers: {}, // レイヤー名ごとの管理
   dxfLayerColors: {}, // レイヤー名ごとのCAD定義色
   dxfHiddenLayers: {}, // CAD上で非表示(OFF)またはフリーズされたレイヤー
+  dxfSnapPoints: [], // 高速スナップ用キャッシュ点 (全頂点・ブロック挿入点)
   dxfZoneId: 9, // DXF用の適用系 (デフォルト: 現在地または全体系)
   dxfAxisMode: 'math', // デフォルト: 数学座標系 (X=東, Y=北)
   dxfColor: 'original', // 'original' (元のCAD色) または HEXカラー
@@ -2700,6 +2701,9 @@ function renderDxfEntities(shouldZoom = false) {
   if (shouldZoom && totalDrawn > 0) {
     zoomToDxfBounds();
   }
+
+  // O-SNAP用キャッシュの事前構築 (LWPOLYLINE全頂点・ブロック挿入点など)
+  buildDxfSnapPointsCache();
 }
 
 // 図面全体にズーム
@@ -2740,6 +2744,7 @@ function clearDxfData() {
   State.dxfRawText = null;
   State.dxfLayers = {};
   State.dxfHiddenLayers = {};
+  State.dxfSnapPoints = [];
 
   document.getElementById('dxfFileInput').value = '';
   document.getElementById('dxfStatusText').textContent = '未読込';
@@ -2752,99 +2757,150 @@ function clearDxfData() {
 // 8. オブジェクトスナップ (O-SNAP) エンジン
 // ==========================================
 
-// 画面内に存在するスナップ候補点（既知点・DXF頂点・端点・測量点）を取得
-function getSnapCandidatesInView() {
-  const pts = [];
-  const bounds = map.getBounds().pad(0.08); // 画面外の余白も含める
+// DXF全頂点・ブロック挿入点のスナップ用キャッシュ構築 (描画時1回のみ実行・高速化)
+function buildDxfSnapPointsCache() {
+  State.dxfSnapPoints = [];
+  if (!State.dxfData || !State.dxfData.entities) return;
+
+  const ents = State.dxfData.entities;
   const isSur = (State.dxfAxisMode === 'survey');
   const zoneId = State.dxfZoneId || State.currentZoneId;
+  const cache = [];
 
-  // 1. 既知点
-  State.knownPoints.forEach(kp => {
-    if (bounds.contains([kp.lat, kp.lng])) {
-      pts.push({
-        lat: kp.lat,
-        lng: kp.lng,
-        x: kp.x,
-        y: kp.y,
-        name: kp.name || '既知点',
-        type: '既知点',
-        source: 'known'
-      });
+  for (let i = 0; i < ents.length; i++) {
+    const ent = ents[i];
+    if (ent.inPaperSpace || ent.space === 1 || ent.isPaperSpace || ent.invisible) continue;
+    const lyr = (ent.layer || '0').trim();
+    if (State.dxfHiddenLayers && State.dxfHiddenLayers[lyr]) continue;
+
+    // 1. 測量点 / ポイント (POINT)
+    if (ent.type === 'POINT' && ent.position) {
+      const ll = xyToLatLng(ent.position.x, ent.position.y, zoneId, isSur);
+      if (ll) {
+        const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
+        cache.push({
+          lat: ll.lat,
+          lng: ll.lng,
+          x: curSur.surveyX,
+          y: curSur.surveyY,
+          name: `点 (${lyr})`,
+          type: '点',
+          source: 'dxf'
+        });
+      }
     }
-  });
 
-  // 2. DXFエンティティ (ペーパー空間および非表示画層は除外)
-  if (State.dxfData && State.dxfData.entities) {
-    const ents = State.dxfData.entities;
-    for (let i = 0; i < ents.length; i++) {
-      if (pts.length >= 2500) break; // パフォーマンス安全上限
-      const ent = ents[i];
-      if (ent.inPaperSpace || ent.invisible) continue;
-      const lyr = (ent.layer || '0').trim();
-      if (State.dxfHiddenLayers && State.dxfHiddenLayers[lyr]) continue;
+    // 2. ブロック挿入点 (INSERT) - マンホール・設備記号・杭など
+    else if (ent.type === 'INSERT' && (ent.position || ent.insertionPoint)) {
+      const pos = ent.position || ent.insertionPoint;
+      const ll = xyToLatLng(pos.x, pos.y, zoneId, isSur);
+      if (ll) {
+        const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
+        const blkName = ent.name || lyr || 'ブロック';
+        cache.push({
+          lat: ll.lat,
+          lng: ll.lng,
+          x: curSur.surveyX,
+          y: curSur.surveyY,
+          name: `ブロック (${blkName})`,
+          type: 'ブロック',
+          source: 'dxf'
+        });
+      }
+    }
 
-      // 測量点 (POINT)
-      if (ent.type === 'POINT' && ent.position) {
-        const ll = xyToLatLng(ent.position.x, ent.position.y, zoneId, isSur);
-        if (ll && bounds.contains([ll.lat, ll.lng])) {
-          // 内部座標(数学系)から測量系(X=北, Y=東)へ正規化
+    // 3. 直線 (LINE) の両端点
+    else if (ent.type === 'LINE' && ent.vertices && ent.vertices.length >= 2) {
+      for (let j = 0; j < 2; j++) {
+        const v = ent.vertices[j];
+        const ll = xyToLatLng(v.x, v.y, zoneId, isSur);
+        if (ll) {
           const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
-          pts.push({
+          cache.push({
             lat: ll.lat,
             lng: ll.lng,
             x: curSur.surveyX,
             y: curSur.surveyY,
-            name: `DXF点 (${lyr})`,
-            type: '点',
+            name: `端点 (${lyr})`,
+            type: '端点',
+            layer: lyr,
             source: 'dxf'
           });
         }
       }
-      // 線・ポリライン (LINE / POLYLINE / LWPOLYLINE) の端点・頂点
-      else if (ent.vertices && ent.vertices.length > 0) {
-        const vLen = ent.vertices.length;
-        for (let j = 0; j < vLen; j++) {
-          const v = ent.vertices[j];
-          const ll = xyToLatLng(v.x, v.y, zoneId, isSur);
-          if (ll && bounds.contains([ll.lat, ll.lng])) {
-            const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
-            const isEnd = (j === 0 || j === vLen - 1);
-            pts.push({
-              lat: ll.lat,
-              lng: ll.lng,
-              x: curSur.surveyX,
-              y: curSur.surveyY,
-              name: `${isEnd ? '端点' : '頂点'} (${lyr})`,
-              type: isEnd ? '端点' : '頂点',
-              source: 'dxf'
-            });
-          }
+    }
+
+    // 4. 軽量ポリライン / ポリライン (LWPOLYLINE / POLYLINE) の全頂点 (上限なし)
+    else if ((ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') && ent.vertices && ent.vertices.length > 0) {
+      const vLen = ent.vertices.length;
+      for (let j = 0; j < vLen; j++) {
+        const v = ent.vertices[j];
+        const ll = xyToLatLng(v.x, v.y, zoneId, isSur);
+        if (ll) {
+          const curSur = latLngToXY(ll.lat, ll.lng, State.currentZoneId);
+          const isEnd = (j === 0 || j === vLen - 1);
+          cache.push({
+            lat: ll.lat,
+            lng: ll.lng,
+            x: curSur.surveyX,
+            y: curSur.surveyY,
+            name: `${isEnd ? '端点' : '頂点'} (${lyr})`,
+            type: isEnd ? '端点' : '頂点',
+            layer: lyr,
+            source: 'dxf'
+          });
         }
       }
     }
   }
 
-  return pts;
+  State.dxfSnapPoints = cache;
 }
 
-// タップ位置から最も近いスナップ点を探索 (画面ピクセル距離判定)
-function findNearestSnapPoint(clickLatLng, maxPixelDist = 28) {
+// タップ/ホバー位置から最も近いスナップ点を探索 (事前キャッシュによる爆速探索)
+function findNearestSnapPoint(clickLatLng, maxPixelDist = 32) {
   if (!State.snapEnabled) return null;
   const clickPt = map.latLngToContainerPoint(clickLatLng);
-  const candidates = getSnapCandidatesInView();
+  const bounds = map.getBounds().pad(0.08); // 画面内＋少し外側まで
   let best = null;
   let minDist = maxPixelDist;
 
-  for (let i = 0; i < candidates.length; i++) {
-    const cand = candidates[i];
-    const screenPt = map.latLngToContainerPoint([cand.lat, cand.lng]);
-    const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
-    if (d < minDist) {
-      minDist = d;
-      best = cand;
+  // 1. 既知点
+  const known = State.knownPoints || [];
+  for (let i = 0; i < known.length; i++) {
+    const kp = known[i];
+    if (bounds.contains([kp.lat, kp.lng])) {
+      const screenPt = map.latLngToContainerPoint([kp.lat, kp.lng]);
+      const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
+      if (d < minDist) {
+        minDist = d;
+        best = {
+          lat: kp.lat,
+          lng: kp.lng,
+          x: kp.x,
+          y: kp.y,
+          name: kp.name || '既知点',
+          type: '既知点',
+          source: 'known'
+        };
+      }
     }
   }
+
+  // 2. DXFキャッシュ点 (LWPOLYLINE全頂点、ブロック挿入点、LINE端点、POINT)
+  const dxfPts = State.dxfSnapPoints || [];
+  for (let i = 0; i < dxfPts.length; i++) {
+    const dp = dxfPts[i];
+    if (bounds.contains([dp.lat, dp.lng])) {
+      const screenPt = map.latLngToContainerPoint([dp.lat, dp.lng]);
+      const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
+      if (d < minDist) {
+        minDist = d;
+        best = dp;
+      }
+    }
+  }
+
   return best;
 }
 
