@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.0 (2026/11/22 11:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.1 (2026/11/22 12:48)</span>
     </div>
   </div>
 
@@ -758,8 +758,8 @@
         <!-- Tab 3: CAD (DXF) Import -->
         <div class="tab-panel" id="tab-dxf">
           <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px; font-size:11px; color:#475569; line-height:1.5;">
-            <b>📐 DXF（CAD図面）取込</b><br>
-            測量CAD（AutoCAD / Jw_cad等）のDXFファイル（線・ポリライン・点・文字）を国土地理院地図上に直接展開します。
+            <b>📐 DXF（CAD図面）取込 - ASCII / バイナリ両対応</b><br>
+            AutoCADやJw_cad等のDXFファイル（通常のテキストDXF・バイナリDXFの両方）を自動判別して国土地理院地図上に展開します。
           </div>
 
           <div class="form-group">
@@ -857,7 +857,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.0 (2026/11/22 11:55)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.1 (2026/11/22 12:48)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1689,6 +1689,139 @@ function renderKnownPoints() {
 
 // --- 10. DXF (CAD) 図面の読み込み・描画処理 ---
 
+// バイナリDXF (Binary DXF) パーサー
+function parseBinaryDxf(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = 22; // ヘッダー "AutoCAD Binary DXF\r\n\x1a\0" (22 bytes) スキップ
+
+  const decoderShiftJis = new TextDecoder('shift_jis');
+  const decoderUtf8 = new TextDecoder('utf-8');
+
+  function readNullTerminatedString() {
+    const start = offset;
+    while (offset < bytes.length && bytes[offset] !== 0) {
+      offset++;
+    }
+    const strBytes = bytes.subarray(start, offset);
+    if (offset < bytes.length && bytes[offset] === 0) offset++; // 0x00 スキップ
+
+    let str = decoderUtf8.decode(strBytes);
+    if (str.includes('\uFFFD')) {
+      try { str = decoderShiftJis.decode(strBytes); } catch (e) {}
+    }
+    return str;
+  }
+
+  const entities = [];
+  const layers = {};
+  let inEntities = false;
+  let inLayerTable = false;
+  let currentLayerName = '';
+  let currentEntity = null;
+
+  while (offset < buffer.byteLength - 2) {
+    // 2バイト符号なし整数 (uint16 little-endian)
+    const code = view.getUint16(offset, true);
+    offset += 2;
+
+    let val = null;
+
+    // グループコードによる型判定
+    if ((code >= 0 && code <= 9) || code === 100 || code === 102 || code === 105 || (code >= 300 && code <= 309) || (code >= 320 && code <= 369) || (code >= 390 && code <= 399) || (code >= 410 && code <= 419) || (code >= 430 && code <= 439) || (code >= 1000 && code <= 1009)) {
+      val = readNullTerminatedString();
+    } else if ((code >= 10 && code <= 59) || (code >= 110 && code <= 149) || (code >= 210 && code <= 239) || (code >= 1010 && code <= 1059)) {
+      val = view.getFloat64(offset, true);
+      offset += 8;
+    } else if ((code >= 60 && code <= 79) || (code >= 170 && code <= 179) || (code >= 270 && code <= 279) || (code >= 370 && code <= 389) || (code >= 400 && code <= 409) || (code >= 1060 && code <= 1070)) {
+      val = view.getInt16(offset, true);
+      offset += 2;
+    } else if ((code >= 90 && code <= 99) || (code >= 420 && code <= 429) || (code >= 440 && code <= 459) || code === 1071) {
+      val = view.getInt32(offset, true);
+      offset += 4;
+    } else if (code >= 280 && code <= 299) {
+      val = view.getUint8(offset);
+      offset += 1;
+    } else if (code >= 310 && code <= 319) {
+      const len = view.getUint8(offset);
+      offset += 1 + len;
+      val = null;
+    } else {
+      console.warn('Unknown binary DXF group code:', code, 'at offset:', offset);
+      break;
+    }
+
+    if (code === 0 && val === 'EOF') break;
+
+    // レイヤーテーブル
+    if (code === 2 && val === 'LAYER') { inLayerTable = true; continue; }
+    if (inLayerTable) {
+      if (code === 0 && (val === 'ENDTAB' || val === 'ENDSEC')) {
+        inLayerTable = false;
+        continue;
+      }
+      if (code === 2) {
+        currentLayerName = val.trim();
+        if (!layers[currentLayerName]) layers[currentLayerName] = {};
+      }
+      if (code === 62 && currentLayerName) {
+        layers[currentLayerName].colorIndex = Math.abs(val);
+      }
+      if (code === 420 && currentLayerName) {
+        layers[currentLayerName].color = val;
+      }
+    }
+
+    // エンティティ
+    if (code === 2 && val === 'ENTITIES') { inEntities = true; continue; }
+    if (inEntities) {
+      if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) {
+        if (currentEntity) entities.push(currentEntity);
+        currentEntity = null;
+        inEntities = false;
+        continue;
+      }
+
+      if (code === 0) {
+        if (currentEntity) entities.push(currentEntity);
+        currentEntity = { type: val, layer: '0', vertices: [] };
+      } else if (currentEntity) {
+        if (code === 8) currentEntity.layer = val.trim();
+        if (code === 62) currentEntity.colorIndex = Math.abs(val);
+        if (code === 420) currentEntity.color = val;
+        if (code === 10) currentEntity.tempX = val;
+        if (code === 20) {
+          currentEntity.tempY = val;
+          if (currentEntity.type === 'LWPOLYLINE' || currentEntity.type === 'POLYLINE') {
+            currentEntity.vertices.push({ x: currentEntity.tempX, y: currentEntity.tempY });
+          } else if (currentEntity.type === 'POINT') {
+            currentEntity.position = { x: currentEntity.tempX, y: currentEntity.tempY };
+          } else if (currentEntity.type === 'TEXT' || currentEntity.type === 'MTEXT') {
+            currentEntity.startPoint = { x: currentEntity.tempX, y: currentEntity.tempY };
+          }
+        }
+        if (code === 11) currentEntity.tempX2 = val;
+        if (code === 21) {
+          currentEntity.tempY2 = val;
+          if (currentEntity.type === 'LINE') {
+            currentEntity.vertices = [
+              { x: currentEntity.tempX, y: currentEntity.tempY },
+              { x: currentEntity.tempX2, y: currentEntity.tempY2 }
+            ];
+          }
+        }
+        if (code === 1) currentEntity.text = val;
+        if (code === 70 && (val === 1 || val === 129)) currentEntity.shape = true; // closed
+      }
+    }
+  }
+
+  return {
+    entities: entities,
+    tables: { layer: { layers: layers } }
+  };
+}
+
 // AutoCAD Color Index (ACI 0〜255) 公式完全RGBテーブル
 const AUTO_CAD_COLOR_INDEX = [0,16711680,16776960,65280,65535,255,16711935,16777215,8421504,12632256,16711680,16744319,13369344,13395558,10027008,10046540,8323072,8339263,4980736,4990502,16727808,16752511,13382400,13401958,10036736,10051404,8331008,8343359,4985600,4992806,16744192,16760703,13395456,13408614,10046464,10056268,8339200,8347455,4990464,4995366,16760576,16768895,13408512,13415014,10056192,10061132,8347392,8351551,4995328,4997670,16776960,16777087,13421568,13421670,10000384,10000460,8355584,8355647,5000192,5000230,12582656,14679935,10079232,11717734,7510016,8755276,6258432,7307071,3755008,4344870,8388352,12582783,6736896,10079334,5019648,7510092,4161280,6258495,2509824,3755046,4194048,10485631,3394560,8375398,2529280,6264908,2064128,5209919,1264640,3099686,65280,8388479,52224,6736998,38912,5019724,32512,4161343,19456,2509862,65343,8388511,52275,6737023,38950,5019743,32543,4161359,19475,2509871,65407,8388543,52326,6737049,38988,5019762,32575,4161375,19494,2509881,65471,8388575,52377,6737074,39026,5019781,32607,4161391,19513,2509890,65535,8388607,52428,6737100,39064,5019800,32639,4161407,19532,2509900,49151,8380415,39372,6730444,29336,5014936,24447,4157311,14668,2507340,32767,8372223,26316,6724044,19608,5010072,16255,4153215,9804,2505036,16383,8364031,13260,6717388,9880,5005208,8063,4149119,4940,2502476,255,8355839,204,6710988,152,5000344,127,4145023,76,2500172,4129023,10452991,3342540,8349388,2490520,6245528,2031743,5193599,1245260,3089996,8323327,12550143,6684876,10053324,4980888,7490712,4128895,6242175,2490444,3745356,12517631,14647295,10027212,11691724,7471256,8735896,6226047,7290751,3735628,4335180,16711935,16744447,13369548,13395660,9961624,9981080,8323199,8339327,4980812,4990540,16711871,16744415,13369497,13395634,9961586,9981061,8323167,8339311,4980793,4990530,16711807,16744383,13369446,13395609,9961548,9981042,8323135,8339295,4980774,4990521,16711743,16744351,13369395,13395583,9961510,9981023,8323103,8339279,4980755,4990511,3355443,5987163,8684676,11382189,14079702,16777215];
 
@@ -1859,24 +1992,59 @@ async function handleDxfFileSelect(e) {
   document.getElementById('dxfStatusText').textContent = '読込中...';
 
   try {
-    const rawText = await readDxfFileAsText(file);
-    State.dxfRawText = rawText;
+    // ArrayBufferとしてまず読み込み、バイナリかテキスト(ASCII)かを自動判定
+    const buffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+
+    // バイナリシグネチャ判定: "AutoCAD Binary DXF\r\n\x1a\0" (22バイト)
+    let isBinary = false;
+    if (buffer.byteLength >= 22) {
+      const u8 = new Uint8Array(buffer, 0, 22);
+      let sig = '';
+      for (let i = 0; i < 18; i++) sig += String.fromCharCode(u8[i]);
+      if (sig === 'AutoCAD Binary DXF') {
+        isBinary = true;
+      }
+    }
 
     let dxf = null;
-    if (window.DxfParser) {
-      try {
-        const parser = new window.DxfParser();
-        dxf = parser.parseSync(rawText);
-      } catch (parserErr) {
-        console.warn('dxf-parser failed, fallback to builtin parser:', parserErr);
-        dxf = parseDxfFallback(rawText);
-      }
+    let formatLabel = isBinary ? 'バイナリDXF' : 'テキスト(ASCII) DXF';
+
+    if (isBinary) {
+      // バイナリDXFパーサーを実行
+      dxf = parseBinaryDxf(buffer);
+      State.dxfRawText = null;
     } else {
-      dxf = parseDxfFallback(rawText);
+      // テキスト(ASCII) DXF: UTF-8 / Shift_JIS 自動判定
+      let text = new TextDecoder('utf-8').decode(buffer);
+      if (text.includes('\uFFFD')) {
+        try {
+          text = new TextDecoder('shift_jis').decode(buffer);
+        } catch (e2) {
+          console.warn('Shift_JIS decode fallback:', e2);
+        }
+      }
+      State.dxfRawText = text;
+
+      if (window.DxfParser) {
+        try {
+          const parser = new window.DxfParser();
+          dxf = parser.parseSync(text);
+        } catch (parserErr) {
+          console.warn('dxf-parser failed, fallback to builtin parser:', parserErr);
+          dxf = parseDxfFallback(text);
+        }
+      } else {
+        dxf = parseDxfFallback(text);
+      }
     }
 
     if (!dxf || !dxf.entities || dxf.entities.length === 0) {
-      alert('有効なCAD図面データ（線や点）が見つかりませんでした。');
+      alert(`有効なCAD図面データ（線や点）が見つかりませんでした。\n形式: ${formatLabel}`);
       document.getElementById('dxfStatusText').textContent = '読込失敗';
       return;
     }
@@ -1905,7 +2073,7 @@ async function handleDxfFileSelect(e) {
     // UI更新
     document.getElementById('btnZoomToDxf').disabled = false;
     document.getElementById('btnClearDxf').disabled = false;
-    showToast(`DXF取込完了 (${dxf.entities.length} 要素)`);
+    showToast(`${formatLabel} 取込完了 (${dxf.entities.length} 要素)`);
   } catch (err) {
     console.error('DXF error:', err);
     alert('DXF読み込みエラー: ' + err.message);
