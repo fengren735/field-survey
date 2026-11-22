@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.6 (2026/11/22 11:07)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.7 (2026/11/22 11:35)</span>
     </div>
   </div>
 
@@ -805,13 +805,14 @@
           <div class="form-group" style="margin-top:4px;">
             <label class="form-label">図面の表示設定</label>
             <div style="display:flex; gap:8px; align-items:center;">
-              <select id="dxfColorSelect" class="select-box" style="padding:4px 8px; font-size:12px;">
-                <option value="#2563eb">線色: ブルー (青)</option>
-                <option value="#dc2626">線色: レッド (赤)</option>
-                <option value="#d97706">線色: オレンジ (橙)</option>
-                <option value="#059669">線色: グリーン (緑)</option>
-                <option value="#0f172a">線色: ブラック (黒)</option>
-                <option value="#ffffff">線色: ホワイト (白/写真用地図向)</option>
+              <select id="dxfColorSelect" class="select-box" style="padding:4px 8px; font-size:12px; font-weight:600;">
+                <option value="original" selected>🎨 元のCAD色 (レイヤー/線色)</option>
+                <option value="#2563eb">単色: ブルー (青)</option>
+                <option value="#dc2626">単色: レッド (赤)</option>
+                <option value="#d97706">単色: オレンジ (橙)</option>
+                <option value="#059669">単色: グリーン (緑)</option>
+                <option value="#0f172a">単色: ブラック (黒)</option>
+                <option value="#ffffff">単色: ホワイト (白/写真向)</option>
               </select>
               <select id="dxfWeightSelect" class="select-box" style="padding:4px 8px; font-size:12px; width:110px;">
                 <option value="2">線幅: 標準 (2px)</option>
@@ -856,7 +857,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.6 (2026/11/22 11:07)</b>
+              アプリVer: <b id="settingsVerLabel">v1.1.7 (2026/11/22 11:35)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -975,9 +976,10 @@ const State = {
   dxfRawText: null, // 読み込んだDXFの生テキスト (軸切替時の再計算用)
   dxfData: null, // 解析済みDXFデータ
   dxfLayers: {}, // レイヤー名ごとの管理
+  dxfLayerColors: {}, // レイヤー名ごとのCAD定義色
   dxfZoneId: 9, // DXF用の適用系 (デフォルト: 現在地または全体系)
   dxfAxisMode: 'math', // デフォルト: 数学座標系 (X=東, Y=北)
-  dxfColor: '#2563eb',
+  dxfColor: 'original', // 'original' (元のCAD色) または HEXカラー
   dxfWeight: 3
 };
 
@@ -1687,6 +1689,47 @@ function renderKnownPoints() {
 
 // --- 10. DXF (CAD) 図面の読み込み・描画処理 ---
 
+// AutoCAD Color Index (ACI) から地図上で見やすいHEXカラーを算出
+const ACI_COLORS = {
+  1: '#ef4444', // 赤
+  2: '#eab308', // 黄色 (白地図でも見えやすい濃いめゴールド)
+  3: '#10b981', // 緑
+  4: '#06b6d4', // シアン (水色)
+  5: '#2563eb', // 青
+  6: '#d946ef', // マゼンタ
+  7: '#1e293b', // 白/黒 (地図上で視認性の高い黒)
+  8: '#64748b', // グレー
+  9: '#94a3b8'  // 明るいグレー
+};
+
+function getAciHexColor(colorIdx) {
+  if (!colorIdx || colorIdx <= 0) return '#2563eb';
+  const c = Math.abs(parseInt(colorIdx, 10));
+  if (ACI_COLORS[c]) return ACI_COLORS[c];
+  // 10〜255番のカラーインデックスを自然な色相に変換
+  const hue = ((c - 10) / 245) * 360;
+  return `hsl(${hue.toFixed(0)}, 85%, 45%)`;
+}
+
+function getEntityRenderColor(ent) {
+  if (State.dxfColor !== 'original') {
+    return State.dxfColor;
+  }
+  // 1. エンティティ自身の直接色 (color または colorIndex)
+  if (typeof ent.color === 'number' && ent.color > 0 && ent.color < 256) {
+    return getAciHexColor(ent.color);
+  }
+  if (typeof ent.colorIndex === 'number' && ent.colorIndex > 0 && ent.colorIndex < 256) {
+    return getAciHexColor(ent.colorIndex);
+  }
+  // 2. 所属レイヤー (画層) の色
+  const layerName = ent.layer || '0';
+  if (State.dxfLayerColors && State.dxfLayerColors[layerName]) {
+    return getAciHexColor(State.dxfLayerColors[layerName]);
+  }
+  return '#2563eb'; // デフォルト青
+}
+
 // ファイル読み込み (UTF-8 / Shift_JIS 自動判定)
 function readDxfFileAsText(file) {
   return new Promise((resolve, reject) => {
@@ -1718,12 +1761,31 @@ function readDxfFileAsText(file) {
 function parseDxfFallback(text) {
   const lines = text.split(/\r?\n/);
   const entities = [];
+  const layerColors = {};
   let currentEntity = null;
   let inEntitiesSection = false;
+  let inLayerTable = false;
+  let currentLayerName = '';
 
   for (let i = 0; i < lines.length - 1; i += 2) {
     const code = parseInt(lines[i].trim(), 10);
     const val = lines[i + 1] ? lines[i + 1].trim() : '';
+
+    // レイヤーテーブルのパース
+    if (code === 2 && val === 'LAYER') {
+      inLayerTable = true;
+      continue;
+    }
+    if (inLayerTable) {
+      if (code === 0 && (val === 'ENDTAB' || val === 'ENDSEC')) {
+        inLayerTable = false;
+        continue;
+      }
+      if (code === 2) currentLayerName = val;
+      if (code === 62 && currentLayerName) {
+        layerColors[currentLayerName] = Math.abs(parseInt(val, 10));
+      }
+    }
 
     if (code === 2 && (val === 'ENTITIES')) {
       inEntitiesSection = true;
@@ -1743,6 +1805,7 @@ function parseDxfFallback(text) {
       currentEntity = { type: val, layer: '0', vertices: [] };
     } else if (currentEntity) {
       if (code === 8) currentEntity.layer = val;
+      if (code === 62) currentEntity.color = Math.abs(parseInt(val, 10));
       if (code === 10) currentEntity.tempX = parseFloat(val);
       if (code === 20) {
         currentEntity.tempY = parseFloat(val);
@@ -1768,7 +1831,7 @@ function parseDxfFallback(text) {
       if (code === 70 && (val === '1' || val === '129')) currentEntity.shape = true; // closed
     }
   }
-  return { entities };
+  return { entities, tables: { layer: { layers: layerColors } } };
 }
 
 async function handleDxfFileSelect(e) {
@@ -1802,6 +1865,22 @@ async function handleDxfFileSelect(e) {
     }
 
     State.dxfData = dxf;
+
+    // レイヤー色のマッピング構築
+    State.dxfLayerColors = {};
+    if (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) {
+      const lyrs = dxf.tables.layer.layers;
+      for (const [lyrName, lyrObj] of Object.entries(lyrs)) {
+        if (typeof lyrObj === 'number') {
+          State.dxfLayerColors[lyrName] = lyrObj;
+        } else if (lyrObj && typeof lyrObj.color === 'number') {
+          State.dxfLayerColors[lyrName] = lyrObj.color;
+        } else if (lyrObj && typeof lyrObj.colorNumber === 'number') {
+          State.dxfLayerColors[lyrName] = lyrObj.colorNumber;
+        }
+      }
+    }
+
     renderDxfEntities(true); // 初回は図面にズーム
 
     // UI更新
@@ -1826,7 +1905,6 @@ function renderDxfEntities(shouldZoom = false) {
   // DXF専用の座標軸判定 (デフォルト: 数学座標系 X=東, Y=北)
   const isSur = (State.dxfAxisMode === 'survey');
   const zoneId = State.dxfZoneId || State.currentZoneId;
-  const color = State.dxfColor;
   const weight = State.dxfWeight;
 
   let lineCount = 0;
@@ -1841,13 +1919,16 @@ function renderDxfEntities(shouldZoom = false) {
     }
     State.dxfLayers[layerName].push(ent);
 
+    // エンティティごとの描画色 (元のCAD色 または ユーザー指定色)
+    const entColor = getEntityRenderColor(ent);
+
     // 1. 直線 (LINE) - interactive: false で地図タップを阻害しない
     if (ent.type === 'LINE' && ent.vertices && ent.vertices.length >= 2) {
       const p1 = xyToLatLng(ent.vertices[0].x, ent.vertices[0].y, zoneId, isSur);
       const p2 = xyToLatLng(ent.vertices[1].x, ent.vertices[1].y, zoneId, isSur);
       if (p1 && p2) {
         const line = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
-          color: color,
+          color: entColor,
           weight: weight,
           opacity: 0.85,
           interactive: false // DXF情報を出さず、地図タップ地点(標高・座標)を優先
@@ -1868,8 +1949,8 @@ function renderDxfEntities(shouldZoom = false) {
       if (latlngs.length >= 2) {
         const isClosed = ent.shape === true || (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
         const poly = isClosed
-          ? L.polygon(latlngs, { color: color, weight: weight, fillOpacity: 0.1, fillColor: color, interactive: false })
-          : L.polyline(latlngs, { color: color, weight: weight, opacity: 0.85, interactive: false });
+          ? L.polygon(latlngs, { color: entColor, weight: weight, fillOpacity: 0.1, fillColor: entColor, interactive: false })
+          : L.polyline(latlngs, { color: entColor, weight: weight, opacity: 0.85, interactive: false });
 
         dxfLayerGroup.addLayer(poly);
         polyCount++;
@@ -1882,7 +1963,7 @@ function renderDxfEntities(shouldZoom = false) {
       if (ll) {
         const marker = L.circleMarker([ll.lat, ll.lng], {
           radius: 4,
-          color: color,
+          color: entColor,
           fillColor: '#ffffff',
           fillOpacity: 1,
           weight: 2,
@@ -1900,7 +1981,7 @@ function renderDxfEntities(shouldZoom = false) {
       if (ll && ent.text) {
         const textIcon = L.divIcon({
           className: 'dxf-text-icon',
-          html: `<div style="color:${color}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${ent.text}</div>`,
+          html: `<div style="color:${entColor}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${ent.text}</div>`,
           iconAnchor: [0, 10]
         });
         const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon, interactive: false });
