@@ -781,7 +781,7 @@
   <div class="floating-tool-panel" id="navCard" style="display:none; border-color:#38bdf8;">
     <div class="tool-panel-header" style="color:#0369a1;">
       <span style="display:flex; align-items:center; gap:5px;">
-        🎯 <b>逆打ち誘導ナビ</b>
+        🎯 <b>誘導ナビ</b>
         <span id="navTargetName" style="font-size:11px; color:#0284c7; font-weight:bold; background:#e0f2fe; padding:1px 6px; border-radius:4px;">目標点</span>
       </span>
       <button class="btn btn-danger btn-sm" id="btnCloseNav" style="padding:2px 8px; font-size:10px;">✕ 誘導終了</button>
@@ -815,7 +815,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.9 (2026/11/22 15:45)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.3.0 (2026/11/22 16:10)</span>
     </div>
   </div>
 
@@ -1106,7 +1106,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.9 (2026/11/22 15:45)</b>
+              アプリVer: <b id="settingsVerLabel">v1.3.0 (2026/11/22 16:10)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1234,8 +1234,8 @@ const State = {
   measureActive: false, // 計測モード
   measureSubMode: 'dist', // 'dist' (距離計測) または 'area' (面積計測)
   measurePoints: [], // 計測選択点 [{ lat, lng, x, y, name, type }]
-  navActive: false, // 逆打ち誘導中か
-  navTarget: null, // 逆打ち目標点 { lat, lng, x, y, name }
+  navActive: false, // 誘導ナビ中か
+  navTarget: null, // 誘導ナビ目標点 { lat, lng, x, y, name }
   snapEnabled: true // オブジェクトスナップ(O-SNAP)有効
 };
 
@@ -2031,7 +2031,7 @@ function renderKnownPoints() {
         </div>
       </div>
       <div class="point-actions">
-        <button class="btn btn-secondary btn-sm" onclick="window.navToPoint('${pt.id}')" title="逆打ち誘導" style="color:#0284c7; font-weight:bold; border-color:#7dd3fc; background:#f0f9ff;">🎯 誘導</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.navToPoint('${pt.id}')" title="誘導ナビ" style="color:#0284c7; font-weight:bold; border-color:#7dd3fc; background:#f0f9ff;">🎯 誘導</button>
         <button class="btn btn-secondary btn-sm" onclick="window.focusPoint(${pt.lat}, ${pt.lng})">表示</button>
         <button class="btn btn-secondary btn-sm" onclick="window.editPoint('${pt.id}')">編集</button>
         <button class="btn btn-danger btn-sm" onclick="window.deletePoint('${pt.id}')">×</button>
@@ -3144,7 +3144,7 @@ function startStakeoutNav(targetPoint) {
   }
 
   updateStakeoutNav();
-  showToast(`🎯「${targetPoint.name || '目標点'}」への逆打ち誘導を開始`);
+  showToast(`🎯「${targetPoint.name || '目標点'}」への誘導ナビを開始`);
 }
 
 function stopStakeoutNav() {
