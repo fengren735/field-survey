@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.4 (2026/11/22 13:08)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.5 (2026/11/22 13:25)</span>
     </div>
   </div>
 
@@ -863,7 +863,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.4 (2026/11/22 13:08)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.5 (2026/11/22 13:25)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1741,6 +1741,12 @@ function parseBinaryDxf(buffer) {
   let currentEntity = null;
   let currentPolyline = null; // POLYLINE + VERTEX + SEQEND 構造用
 
+  function pushModelEntity(ent) {
+    if (!ent) return;
+    if (ent.inPaperSpace) return; // ペーパー空間(印刷・レイアウト用図面枠・方位・縮尺等)は除外
+    entities.push(ent);
+  }
+
   while (offset < buffer.byteLength - 2) {
     const code = view.getUint16(offset, true);
     offset += 2;
@@ -1806,7 +1812,7 @@ function parseBinaryDxf(buffer) {
     if (inEntities) {
       if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) {
         if (currentEntity && currentEntity.type !== 'POLYLINE' && currentEntity.type !== 'VERTEX') {
-          entities.push(currentEntity);
+          pushModelEntity(currentEntity);
         }
         currentEntity = null;
         inEntities = false;
@@ -1816,7 +1822,7 @@ function parseBinaryDxf(buffer) {
       if (code === 0) {
         // 直前のエンティティを登録 (VERTEX/SEQEND以外)
         if (currentEntity && currentEntity.type !== 'POLYLINE' && currentEntity.type !== 'VERTEX') {
-          entities.push(currentEntity);
+          pushModelEntity(currentEntity);
         }
 
         // 旧式ポリライン (POLYLINE + VERTEX... + SEQEND)
@@ -1827,7 +1833,7 @@ function parseBinaryDxf(buffer) {
           currentEntity = { type: 'VERTEX', layer: currentPolyline ? currentPolyline.layer : '0' };
         } else if (val === 'SEQEND') {
           if (currentPolyline) {
-            entities.push(currentPolyline);
+            pushModelEntity(currentPolyline);
             currentPolyline = null;
           }
           currentEntity = null;
@@ -1845,6 +1851,13 @@ function parseBinaryDxf(buffer) {
           currentEntity.invisible = (val === 1);
           if (currentEntity.type === 'POLYLINE' && currentPolyline) {
             currentPolyline.invisible = (val === 1);
+          }
+        }
+        if (code === 67) {
+          // グループコード67: 0=モデル空間(実測座標), 1=ペーパー空間(レイアウト/印刷枠)
+          currentEntity.inPaperSpace = (val === 1);
+          if (currentEntity.type === 'POLYLINE' && currentPolyline) {
+            currentPolyline.inPaperSpace = (val === 1);
           }
         }
         if (code === 62) {
@@ -1896,8 +1909,8 @@ function parseBinaryDxf(buffer) {
   }
 
   // 終了時に残っているエンティティ
-  if (currentPolyline) entities.push(currentPolyline);
-  else if (currentEntity && currentEntity.type !== 'VERTEX') entities.push(currentEntity);
+  if (currentPolyline) pushModelEntity(currentPolyline);
+  else if (currentEntity && currentEntity.type !== 'VERTEX') pushModelEntity(currentEntity);
 
   return {
     entities: entities,
@@ -2035,7 +2048,7 @@ function parseDxfFallback(text) {
       continue;
     }
     if (code === 0 && (val === 'ENDSEC' || val === 'EOF')) {
-      if (currentEntity) entities.push(currentEntity);
+      if (currentEntity && !currentEntity.inPaperSpace) entities.push(currentEntity);
       currentEntity = null;
       if (val === 'ENDSEC') inEntitiesSection = false;
       continue;
@@ -2044,11 +2057,12 @@ function parseDxfFallback(text) {
     if (!inEntitiesSection) continue;
 
     if (code === 0) {
-      if (currentEntity) entities.push(currentEntity);
+      if (currentEntity && !currentEntity.inPaperSpace) entities.push(currentEntity);
       currentEntity = { type: val, layer: '0', vertices: [] };
     } else if (currentEntity) {
       if (code === 8) currentEntity.layer = val;
       if (code === 60) currentEntity.invisible = (parseInt(val, 10) === 1);
+      if (code === 67) currentEntity.inPaperSpace = (parseInt(val, 10) === 1);
       if (code === 62) currentEntity.color = Math.abs(parseInt(val, 10));
       if (code === 10) currentEntity.tempX = parseFloat(val);
       if (code === 20) {
@@ -2213,6 +2227,9 @@ function renderDxfEntities(shouldZoom = false) {
   let textCount = 0;
 
   entities.forEach((ent) => {
+    // 0. ペーパー空間(レイアウト印刷枠・方位・縮尺など)の完全除外
+    if (ent.inPaperSpace || ent.space === 1 || ent.isPaperSpace) return;
+
     // 1. エンティティ自身の非表示判定
     if (ent.invisible) return;
 
