@@ -663,6 +663,40 @@
       0% { transform: scale(0.6); opacity: 1; }
       100% { transform: scale(1.8); opacity: 0; }
     }
+
+    /* 計測モード時のポインターカーソル (矢印) */
+    #map.measuring-mode,
+    #map.measuring-mode .leaflet-grab,
+    #map.measuring-mode .leaflet-interactive {
+      cursor: default !important;
+    }
+
+    /* マウスホバー追従用スナップ枠 */
+    .snap-hover-icon {
+      position: relative;
+      width: 24px;
+      height: 24px;
+      border: 2px dashed #ca8a04;
+      background: rgba(234, 179, 8, 0.25);
+      border-radius: 4px;
+      box-shadow: 0 0 8px rgba(234, 179, 8, 0.7);
+      pointer-events: none;
+    }
+
+    /* 地図上の中央面積ラベル */
+    .measure-area-badge {
+      background: rgba(15, 23, 42, 0.88);
+      color: #38bdf8;
+      border: 2px solid #38bdf8;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      pointer-events: none;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -693,8 +727,12 @@
         <span class="val" id="dispMeasureTotalDist">---</span>
       </div>
       <div class="tool-panel-row">
-        <span class="lbl">夾角/面積:</span>
-        <span class="val" id="dispMeasureAngleArea">---</span>
+        <span class="lbl">夾角(内角):</span>
+        <span class="val" id="dispMeasureAngle">---</span>
+      </div>
+      <div class="tool-panel-row" style="grid-column: span 2; background:#ecfdf5; border-color:#a7f3d0;">
+        <span class="lbl" style="color:#059669; font-weight:bold;">閉合面積:</span>
+        <span class="val" style="color:#047857; font-size:13px; font-weight:800;" id="dispMeasureArea">---</span>
       </div>
     </div>
     <div class="tool-panel-actions">
@@ -743,7 +781,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.6 (2026/11/22 15:15)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.7 (2026/11/22 15:35)</span>
     </div>
   </div>
 
@@ -1033,7 +1071,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.6 (2026/11/22 15:15)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.7 (2026/11/22 15:35)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2748,6 +2786,9 @@ function triggerSnapFeedback(snapPoint) {
   setTimeout(() => snapLayerGroup.removeLayer(m), 1500);
 }
 
+// マウスホバー追従用スナップ枠マーカー
+let hoverSnapMarker = null;
+
 // ==========================================
 // 9. スナップ計測ツール (距離・角度・面積)
 // ==========================================
@@ -2756,21 +2797,28 @@ function toggleMeasureMode(forceState = null) {
   State.measureActive = (forceState !== null) ? forceState : !State.measureActive;
   const btn = document.getElementById('btnToggleMeasure');
   const panel = document.getElementById('measureCard');
+  const mapEl = map.getContainer();
 
   if (State.measureActive) {
     btn.classList.add('active');
     btn.style.background = '#0284c7';
     btn.style.color = 'white';
     panel.style.display = 'flex';
+    mapEl.classList.add('measuring-mode'); // 矢印カーソルに切り替え
     // 地図を見やすくするためボトムシートを収納
     document.getElementById('bottomBar').classList.remove('expanded');
     document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
-    showToast('📏 計測モード開始 (端点・頂点にスナップ吸着)');
+    showToast('📏 計測モード開始 (マウスホバーで事前スナップ吸着)');
   } else {
     btn.classList.remove('active');
     btn.style.background = '';
     btn.style.color = '';
     panel.style.display = 'none';
+    mapEl.classList.remove('measuring-mode'); // 通常カーソルに戻す
+    if (hoverSnapMarker) {
+      map.removeLayer(hoverSnapMarker);
+      hoverSnapMarker = null;
+    }
     clearMeasurePoints();
     showToast('計測モードを終了しました');
   }
@@ -2802,7 +2850,8 @@ function updateMeasureCardUi() {
   const distEl = document.getElementById('dispMeasureDist');
   const azEl = document.getElementById('dispMeasureAzimuth');
   const totalEl = document.getElementById('dispMeasureTotalDist');
-  const angleAreaEl = document.getElementById('dispMeasureAngleArea');
+  const angleEl = document.getElementById('dispMeasureAngle');
+  const areaEl = document.getElementById('dispMeasureArea');
 
   countEl.textContent = `${pts.length} 点選択`;
 
@@ -2810,7 +2859,8 @@ function updateMeasureCardUi() {
     distEl.textContent = '---';
     azEl.textContent = '---';
     totalEl.textContent = (pts.length === 1) ? '1点目選択中' : '---';
-    angleAreaEl.textContent = '---';
+    if (angleEl) angleEl.textContent = '---';
+    if (areaEl) areaEl.textContent = '---';
     return;
   }
 
@@ -2833,7 +2883,7 @@ function updateMeasureCardUi() {
   }
   totalEl.textContent = `${totalDist.toFixed(3)} m`;
 
-  // 夾角 (3点以上) または 面積 (3点以上)
+  // 夾角 (3点以上) および 閉合面積 (3点以上)
   if (pts.length >= 3) {
     // 直前の3点間の夾角
     const p1 = pts[pts.length - 3];
@@ -2842,12 +2892,14 @@ function updateMeasureCardUi() {
     const az1 = (((Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI) + 360) % 360);
     const az2 = (((Math.atan2(p3.y - p2.y, p3.x - p2.x) * 180 / Math.PI) + 360) % 360);
     const interiorAngle = ((az2 - az1 + 360) % 360);
+    if (angleEl) angleEl.textContent = `∠ ${formatDms(interiorAngle)}`;
 
     const polyArea = calcPolygonArea(pts);
     const tsubo = polyArea * 0.3025;
-    angleAreaEl.textContent = `∠${formatDms(interiorAngle)} / ${polyArea.toFixed(2)}㎡(${tsubo.toFixed(1)}坪)`;
+    if (areaEl) areaEl.textContent = `${polyArea.toFixed(2)} ㎡ (${tsubo.toFixed(1)} 坪)`;
   } else {
-    angleAreaEl.textContent = '---';
+    if (angleEl) angleEl.textContent = '---';
+    if (areaEl) areaEl.textContent = '---';
   }
 }
 
@@ -2869,16 +2921,31 @@ function renderMeasureLayers() {
     });
     measureLayerGroup.addLayer(polyline);
 
-    // 3点以上の場合は半透明閉合ポリゴン
+    // 3点以上の場合は半透明閉合ポリゴン＆中央面積ラベル
     if (latlngs.length >= 3) {
       const polygon = L.polygon(latlngs, {
         color: '#0284c7',
-        weight: 1,
+        weight: 1.5,
         fillColor: '#38bdf8',
-        fillOpacity: 0.2,
+        fillOpacity: 0.25,
         interactive: false
       });
       measureLayerGroup.addLayer(polygon);
+
+      // 多角形の中心(重心)に大きな面積ラベルを直接描画
+      let sumLat = 0, sumLng = 0;
+      pts.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
+      const centerLat = sumLat / pts.length;
+      const centerLng = sumLng / pts.length;
+      const polyArea = calcPolygonArea(pts);
+      const tsubo = polyArea * 0.3025;
+
+      const areaIcon = L.divIcon({
+        className: 'measure-area-label-wrap',
+        html: `<div class="measure-area-badge">面積: ${polyArea.toFixed(2)} ㎡<br><span style="font-size:10px; font-weight:normal; color:#bae6fd;">(${tsubo.toFixed(1)} 坪)</span></div>`,
+        iconAnchor: [50, 20]
+      });
+      measureLayerGroup.addLayer(L.marker([centerLat, centerLng], { icon: areaIcon, interactive: false }));
     }
 
     // 各区間の中央に距離ラベル
@@ -2900,6 +2967,12 @@ function renderMeasureLayers() {
     const numIcon = L.divIcon({
       className: 'measure-node-pin',
       html: `<div style="background:#0284c7; color:white; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.4); pointer-events:none;">${idx + 1}</div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
+    measureLayerGroup.addLayer(L.marker([p.lat, p.lng], { icon: numIcon, interactive: false }));
+  });
+}
       iconSize: [22, 22],
       iconAnchor: [11, 11]
     });
@@ -3646,6 +3719,45 @@ map.on('click', async (e) => {
     console.error('Tap elevation fetch failed:', err);
     elevTextEl.textContent = `取得失敗 (${err.name || '通信エラー'})`;
     elevTextEl.style.color = '#ef4444';
+  }
+});
+
+// マウス移動時のリアルタイムO-SNAPプレビュー (ホバー吸着枠の追従)
+map.on('mousemove', (e) => {
+  if (!State.measureActive && !State.snapEnabled) {
+    if (hoverSnapMarker) {
+      map.removeLayer(hoverSnapMarker);
+      hoverSnapMarker = null;
+    }
+    return;
+  }
+
+  // 画面ピクセル25px以内のスナップ点を高速探索
+  const snap = findNearestSnapPoint(e.latlng, 25);
+  if (snap) {
+    if (!hoverSnapMarker) {
+      const snapIcon = L.divIcon({
+        className: 'snap-hover-icon',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      hoverSnapMarker = L.marker([snap.lat, snap.lng], { icon: snapIcon, interactive: false });
+      map.addLayer(hoverSnapMarker);
+    } else {
+      hoverSnapMarker.setLatLng([snap.lat, snap.lng]);
+    }
+  } else {
+    if (hoverSnapMarker) {
+      map.removeLayer(hoverSnapMarker);
+      hoverSnapMarker = null;
+    }
+  }
+});
+
+map.on('mouseout', () => {
+  if (hoverSnapMarker) {
+    map.removeLayer(hoverSnapMarker);
+    hoverSnapMarker = null;
   }
 });
 
