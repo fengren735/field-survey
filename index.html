@@ -574,7 +574,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.1.9 (2026/11/22 11:48)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.0 (2026/11/22 11:55)</span>
     </div>
   </div>
 
@@ -857,7 +857,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.1.9 (2026/11/22 11:48)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.0 (2026/11/22 11:55)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1721,25 +1721,26 @@ function getEntityRenderColor(ent) {
     return State.dxfColor;
   }
 
-  // 1. エンティティ自身の直接色 (colorIndex: 1〜255 を最優先)
+  // 1. エンティティ自身の直接色指定 (colorIndex: 1〜255)
   if (typeof ent.colorIndex === 'number' && ent.colorIndex > 0 && ent.colorIndex < 256) {
     return aciIndexToHex(ent.colorIndex);
   }
 
-  // 2. エンティティのRGB整数値 (dxf-parserが計算した24ビットRGB値)
+  // 2. エンティティのRGB整数値 (color: 24ビット整数)
   if (typeof ent.color === 'number') {
     return rgbIntToHex(ent.color);
   }
 
-  // 3. 所属レイヤー (画層) の色 (ACIインデックス 1〜255)
-  const layerName = ent.layer || '0';
-  if (State.dxfLayerColors && State.dxfLayerColors[layerName] !== undefined) {
-    const lyrCol = State.dxfLayerColors[layerName];
-    // 256以上ならRGB整数、255以下ならACIインデックス
-    if (lyrCol >= 256) {
-      return rgbIntToHex(lyrCol);
-    } else {
-      return aciIndexToHex(lyrCol);
+  // 3. 所属レイヤー (画層) の色
+  const layerName = ent.layer ? ent.layer.trim() : '0';
+  if (State.dxfLayerColors) {
+    if (State.dxfLayerColors[layerName]) {
+      return State.dxfLayerColors[layerName];
+    }
+    // 大文字小文字の違いにも対応
+    const lower = layerName.toLowerCase();
+    for (const [k, v] of Object.entries(State.dxfLayerColors)) {
+      if (k.toLowerCase() === lower) return v;
     }
   }
 
@@ -1797,7 +1798,7 @@ function parseDxfFallback(text) {
         inLayerTable = false;
         continue;
       }
-      if (code === 2) currentLayerName = val;
+      if (code === 2) currentLayerName = val.trim();
       if (code === 62 && currentLayerName) {
         layerColors[currentLayerName] = Math.abs(parseInt(val, 10));
       }
@@ -1882,18 +1883,20 @@ async function handleDxfFileSelect(e) {
 
     State.dxfData = dxf;
 
-    // レイヤー色のマッピング構築
+    // レイヤー色のマッピング構築 (正確なHEXカラーとして直接辞書化)
     State.dxfLayerColors = {};
     if (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) {
       const lyrs = dxf.tables.layer.layers;
       for (const [lyrName, lyrObj] of Object.entries(lyrs)) {
+        let hexCol = '#000000';
         if (typeof lyrObj === 'number') {
-          State.dxfLayerColors[lyrName] = lyrObj;
+          hexCol = aciIndexToHex(lyrObj);
+        } else if (lyrObj && typeof lyrObj.colorIndex === 'number') {
+          hexCol = aciIndexToHex(lyrObj.colorIndex);
         } else if (lyrObj && typeof lyrObj.color === 'number') {
-          State.dxfLayerColors[lyrName] = lyrObj.color;
-        } else if (lyrObj && typeof lyrObj.colorNumber === 'number') {
-          State.dxfLayerColors[lyrName] = lyrObj.colorNumber;
+          hexCol = rgbIntToHex(lyrObj.color);
         }
+        State.dxfLayerColors[lyrName.trim()] = hexCol;
       }
     }
 
@@ -1965,8 +1968,8 @@ function renderDxfEntities(shouldZoom = false) {
       if (latlngs.length >= 2) {
         const isClosed = ent.shape === true || (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
         const poly = isClosed
-          ? L.polygon(latlngs, { color: entColor, weight: weight, fillOpacity: 0.1, fillColor: entColor, interactive: false })
-          : L.polyline(latlngs, { color: entColor, weight: weight, opacity: 0.85, interactive: false });
+          ? L.polygon(latlngs, { color: entColor, weight: weight, fill: false, opacity: 0.9, interactive: false })
+          : L.polyline(latlngs, { color: entColor, weight: weight, opacity: 0.9, interactive: false });
 
         dxfLayerGroup.addLayer(poly);
         polyCount++;
