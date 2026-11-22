@@ -697,6 +697,25 @@
       pointer-events: none;
       text-align: center;
     }
+    /* 計測モード切替サブタブ */
+    .submode-btn {
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .submode-btn.active {
+      background: white;
+      color: #0284c7;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+    }
   </style>
 </head>
 <body>
@@ -708,12 +727,18 @@
   <!-- Floating Measure Panel -->
   <div class="floating-tool-panel" id="measureCard" style="display:none;">
     <div class="tool-panel-header">
-      <span style="color:#0284c7; display:flex; align-items:center; gap:5px;">
-        📏 <b>スナップ計測</b> <span id="measureSnapHint" style="font-size:10px; color:#16a34a; font-weight:normal; background:#dcfce7; padding:1px 5px; border-radius:3px;">O-SNAP有効</span>
-      </span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <div style="display:flex; background:#e2e8f0; padding:2px; border-radius:6px;">
+          <button id="btnSubModeDist" class="submode-btn active">📏 距離</button>
+          <button id="btnSubModeArea" class="submode-btn">📐 面積</button>
+        </div>
+        <span id="measureSnapHint" style="font-size:9.5px; color:#16a34a; background:#dcfce7; padding:1px 4px; border-radius:3px;">O-SNAP</span>
+      </div>
       <span style="font-size:11px; color:#64748b;" id="measurePointCount">0 点選択</span>
     </div>
-    <div class="tool-panel-body">
+
+    <!-- 距離計測用ボディ -->
+    <div class="tool-panel-body" id="measureDistBody">
       <div class="tool-panel-row">
         <span class="lbl">区間距離:</span>
         <span class="val" id="dispMeasureDist">---</span>
@@ -730,11 +755,20 @@
         <span class="lbl">夾角(内角):</span>
         <span class="val" id="dispMeasureAngle">---</span>
       </div>
-      <div class="tool-panel-row" style="grid-column: span 2; background:#ecfdf5; border-color:#a7f3d0;">
-        <span class="lbl" style="color:#059669; font-weight:bold;">閉合面積:</span>
-        <span class="val" style="color:#047857; font-size:13px; font-weight:800;" id="dispMeasureArea">---</span>
+    </div>
+
+    <!-- 面積計測用ボディ -->
+    <div class="tool-panel-body" id="measureAreaBody" style="display:none;">
+      <div class="tool-panel-row" style="grid-column: span 2; background:#ecfdf5; border-color:#a7f3d0; padding:6px 10px;">
+        <span class="lbl" style="color:#059669; font-weight:bold; font-size:11px;">閉合面積:</span>
+        <span class="val" style="color:#047857; font-size:15px; font-weight:800;" id="dispMeasureArea">---</span>
+      </div>
+      <div class="tool-panel-row" style="grid-column: span 2;">
+        <span class="lbl">外周長 (総延長):</span>
+        <span class="val" id="dispAreaPerimeter">---</span>
       </div>
     </div>
+
     <div class="tool-panel-actions">
       <button class="btn btn-secondary btn-sm" id="btnMeasureUndo" style="flex:1;">↩ 1点戻す</button>
       <button class="btn btn-secondary btn-sm" id="btnMeasureClear" style="flex:1;">🗑️ クリア</button>
@@ -781,7 +815,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.8 (2026/11/22 15:40)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.2.9 (2026/11/22 15:45)</span>
     </div>
   </div>
 
@@ -791,7 +825,8 @@
     <button class="btn-icon-map" id="btnZoomOut" title="縮小" style="font-size:22px; font-weight:bold;">−</button>
     <button class="btn-icon-map" id="btnRecenter" title="現在地に移動">🎯</button>
     <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
-    <button class="btn-icon-map" id="btnToggleMeasure" title="スナップ計測">📏</button>
+    <button class="btn-icon-map" id="btnToggleMeasure" title="距離計測">📏</button>
+    <button class="btn-icon-map" id="btnToggleArea" title="面積計測">📐</button>
   </div>
 
   <!-- Bottom Wrapper -->
@@ -1071,7 +1106,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.2.8 (2026/11/22 15:40)</b>
+              アプリVer: <b id="settingsVerLabel">v1.2.9 (2026/11/22 15:45)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1197,6 +1232,7 @@ const State = {
   dxfColor: 'original', // 'original' (元のCAD色) または HEXカラー
   dxfWeight: 3,
   measureActive: false, // 計測モード
+  measureSubMode: 'dist', // 'dist' (距離計測) または 'area' (面積計測)
   measurePoints: [], // 計測選択点 [{ lat, lng, x, y, name, type }]
   navActive: false, // 逆打ち誘導中か
   navTarget: null, // 逆打ち目標点 { lat, lng, x, y, name }
@@ -1618,7 +1654,19 @@ function initUi() {
   // スナップ計測 & 逆打ち誘導ナビ UIイベント
   const btnToggleMeasure = document.getElementById('btnToggleMeasure');
   if (btnToggleMeasure) {
-    btnToggleMeasure.addEventListener('click', () => toggleMeasureMode());
+    btnToggleMeasure.addEventListener('click', () => toggleMeasureMode('dist'));
+  }
+  const btnToggleArea = document.getElementById('btnToggleArea');
+  if (btnToggleArea) {
+    btnToggleArea.addEventListener('click', () => toggleMeasureMode('area'));
+  }
+  const btnSubModeDist = document.getElementById('btnSubModeDist');
+  if (btnSubModeDist) {
+    btnSubModeDist.addEventListener('click', () => setMeasureSubMode('dist'));
+  }
+  const btnSubModeArea = document.getElementById('btnSubModeArea');
+  if (btnSubModeArea) {
+    btnSubModeArea.addEventListener('click', () => setMeasureSubMode('area'));
   }
   const btnMeasureUndo = document.getElementById('btnMeasureUndo');
   if (btnMeasureUndo) {
@@ -2793,26 +2841,40 @@ let hoverSnapMarker = null;
 // 9. スナップ計測ツール (距離・角度・面積)
 // ==========================================
 
-function toggleMeasureMode(forceState = null) {
-  State.measureActive = (forceState !== null) ? forceState : !State.measureActive;
-  const btn = document.getElementById('btnToggleMeasure');
+function toggleMeasureMode(mode = 'dist') {
+  if (mode === false) {
+    State.measureActive = false;
+  } else if (State.measureActive && State.measureSubMode === mode) {
+    State.measureActive = false;
+  } else {
+    State.measureActive = true;
+    State.measureSubMode = mode;
+  }
+
+  const btnDist = document.getElementById('btnToggleMeasure');
+  const btnArea = document.getElementById('btnToggleArea');
   const panel = document.getElementById('measureCard');
   const mapEl = map.getContainer();
 
   if (State.measureActive) {
-    btn.classList.add('active');
-    btn.style.background = '#0284c7';
-    btn.style.color = 'white';
     panel.style.display = 'flex';
     mapEl.classList.add('measuring-mode'); // 矢印カーソルに切り替え
-    // 地図を見やすくするためボトムシートを収納
     document.getElementById('bottomBar').classList.remove('expanded');
     document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
-    showToast('📏 計測モード開始 (マウスホバーで事前スナップ吸着)');
+    
+    setMeasureSubMode(State.measureSubMode);
+    showToast(State.measureSubMode === 'area' ? '📐 面積計測モード開始 (頂点を指定)' : '📏 距離計測モード開始 (マウスホバーで事前吸着)');
   } else {
-    btn.classList.remove('active');
-    btn.style.background = '';
-    btn.style.color = '';
+    if (btnDist) {
+      btnDist.classList.remove('active');
+      btnDist.style.background = '';
+      btnDist.style.color = '';
+    }
+    if (btnArea) {
+      btnArea.classList.remove('active');
+      btnArea.style.background = '';
+      btnArea.style.color = '';
+    }
     panel.style.display = 'none';
     mapEl.classList.remove('measuring-mode'); // 通常カーソルに戻す
     if (hoverSnapMarker) {
@@ -2822,6 +2884,35 @@ function toggleMeasureMode(forceState = null) {
     clearMeasurePoints();
     showToast('計測モードを終了しました');
   }
+}
+
+function setMeasureSubMode(subMode) {
+  State.measureSubMode = subMode;
+  const btnDist = document.getElementById('btnToggleMeasure');
+  const btnArea = document.getElementById('btnToggleArea');
+  const tabDist = document.getElementById('btnSubModeDist');
+  const tabArea = document.getElementById('btnSubModeArea');
+  const distBody = document.getElementById('measureDistBody');
+  const areaBody = document.getElementById('measureAreaBody');
+
+  if (subMode === 'area') {
+    if (btnDist) { btnDist.classList.remove('active'); btnDist.style.background = ''; btnDist.style.color = ''; }
+    if (btnArea) { btnArea.classList.add('active'); btnArea.style.background = '#059669'; btnArea.style.color = 'white'; }
+    if (tabDist) tabDist.classList.remove('active');
+    if (tabArea) tabArea.classList.add('active');
+    if (distBody) distBody.style.display = 'none';
+    if (areaBody) areaBody.style.display = 'grid';
+  } else {
+    if (btnDist) { btnDist.classList.add('active'); btnDist.style.background = '#0284c7'; btnDist.style.color = 'white'; }
+    if (btnArea) { btnArea.classList.remove('active'); btnArea.style.background = ''; btnArea.style.color = ''; }
+    if (tabDist) tabDist.classList.add('active');
+    if (tabArea) tabArea.classList.remove('active');
+    if (distBody) distBody.style.display = 'grid';
+    if (areaBody) areaBody.style.display = 'none';
+  }
+
+  renderMeasureLayers();
+  updateMeasureCardUi();
 }
 
 function addMeasurePoint(pt) {
@@ -2852,54 +2943,70 @@ function updateMeasureCardUi() {
   const totalEl = document.getElementById('dispMeasureTotalDist');
   const angleEl = document.getElementById('dispMeasureAngle');
   const areaEl = document.getElementById('dispMeasureArea');
+  const perimeterEl = document.getElementById('dispAreaPerimeter');
 
   countEl.textContent = `${pts.length} 点選択`;
 
+  // 1. 距離計測用項目の計算
   if (pts.length < 2) {
-    distEl.textContent = '---';
-    azEl.textContent = '---';
-    totalEl.textContent = (pts.length === 1) ? '1点目選択中' : '---';
+    if (distEl) distEl.textContent = '---';
+    if (azEl) azEl.textContent = '---';
+    if (totalEl) totalEl.textContent = (pts.length === 1) ? '1点目選択中' : '---';
     if (angleEl) angleEl.textContent = '---';
-    if (areaEl) areaEl.textContent = '---';
-    return;
+  } else {
+    const pPrev = pts[pts.length - 2];
+    const pCurr = pts[pts.length - 1];
+    const dx = pCurr.x - pPrev.x;
+    const dy = pCurr.y - pPrev.y;
+    const segDist = Math.hypot(dx, dy);
+    const azRad = Math.atan2(dy, dx);
+    const azDeg = ((azRad * 180 / Math.PI) + 360) % 360;
+
+    if (distEl) distEl.textContent = `${segDist.toFixed(3)} m`;
+    if (azEl) azEl.textContent = `${formatDms(azDeg)} (${azDeg.toFixed(1)}°)`;
+
+    let totalDist = 0;
+    for (let i = 1; i < pts.length; i++) {
+      totalDist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    }
+    if (totalEl) totalEl.textContent = `${totalDist.toFixed(3)} m`;
+
+    if (pts.length >= 3) {
+      const p1 = pts[pts.length - 3];
+      const p2 = pts[pts.length - 2];
+      const p3 = pts[pts.length - 1];
+      const az1 = (((Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI) + 360) % 360);
+      const az2 = (((Math.atan2(p3.y - p2.y, p3.x - p2.x) * 180 / Math.PI) + 360) % 360);
+      const interiorAngle = ((az2 - az1 + 360) % 360);
+      if (angleEl) angleEl.textContent = `∠ ${formatDms(interiorAngle)}`;
+    } else {
+      if (angleEl) angleEl.textContent = '---';
+    }
   }
 
-  // 直近2点の区間距離と方向角 (測量座標 X=北, Y=東)
-  const pPrev = pts[pts.length - 2];
-  const pCurr = pts[pts.length - 1];
-  const dx = pCurr.x - pPrev.x; // 北差
-  const dy = pCurr.y - pPrev.y; // 東差
-  const segDist = Math.hypot(dx, dy);
-  const azRad = Math.atan2(dy, dx);
-  const azDeg = ((azRad * 180 / Math.PI) + 360) % 360;
-
-  distEl.textContent = `${segDist.toFixed(3)} m`;
-  azEl.textContent = `${formatDms(azDeg)} (${azDeg.toFixed(1)}°)`;
-
-  // 総延長 (累積距離)
-  let totalDist = 0;
-  for (let i = 1; i < pts.length; i++) {
-    totalDist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-  }
-  totalEl.textContent = `${totalDist.toFixed(3)} m`;
-
-  // 夾角 (3点以上) および 閉合面積 (3点以上)
-  if (pts.length >= 3) {
-    // 直前の3点間の夾角
-    const p1 = pts[pts.length - 3];
-    const p2 = pts[pts.length - 2];
-    const p3 = pts[pts.length - 1];
-    const az1 = (((Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI) + 360) % 360);
-    const az2 = (((Math.atan2(p3.y - p2.y, p3.x - p2.x) * 180 / Math.PI) + 360) % 360);
-    const interiorAngle = ((az2 - az1 + 360) % 360);
-    if (angleEl) angleEl.textContent = `∠ ${formatDms(interiorAngle)}`;
-
+  // 2. 面積計測用項目の計算
+  if (pts.length < 3) {
+    if (areaEl) areaEl.textContent = (pts.length === 0) ? '---' : '3点以上必要';
+    if (perimeterEl) {
+      if (pts.length === 2) {
+        const d = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+        perimeterEl.textContent = `${d.toFixed(3)} m (直線)`;
+      } else {
+        perimeterEl.textContent = '---';
+      }
+    }
+  } else {
     const polyArea = calcPolygonArea(pts);
     const tsubo = polyArea * 0.3025;
     if (areaEl) areaEl.textContent = `${polyArea.toFixed(2)} ㎡ (${tsubo.toFixed(1)} 坪)`;
-  } else {
-    if (angleEl) angleEl.textContent = '---';
-    if (areaEl) areaEl.textContent = '---';
+
+    // 閉合外周長（先頭〜末尾を閉じた全周）
+    let perimeter = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const nextIdx = (i + 1) % pts.length;
+      perimeter += Math.hypot(pts[nextIdx].x - pts[i].x, pts[nextIdx].y - pts[i].y);
+    }
+    if (perimeterEl) perimeterEl.textContent = `${perimeter.toFixed(3)} m (閉合)`;
   }
 }
 
@@ -2909,30 +3016,23 @@ function renderMeasureLayers() {
   if (!pts || pts.length === 0) return;
 
   const latlngs = pts.map(p => [p.lat, p.lng]);
+  const isArea = (State.measureSubMode === 'area');
+  const mainColor = isArea ? '#059669' : '#0284c7';
 
-  // 折れ線
-  if (latlngs.length >= 2) {
-    const polyline = L.polyline(latlngs, {
-      color: '#0284c7',
-      weight: 3.5,
-      dashArray: '6, 6',
-      opacity: 0.9,
-      interactive: false
-    });
-    measureLayerGroup.addLayer(polyline);
-
-    // 3点以上の場合は半透明閉合ポリゴン＆中央面積ラベル
+  if (isArea) {
+    // 面積計測モード
     if (latlngs.length >= 3) {
+      // 閉合ポリゴン
       const polygon = L.polygon(latlngs, {
-        color: '#0284c7',
-        weight: 1.5,
-        fillColor: '#38bdf8',
+        color: '#059669',
+        weight: 2.5,
+        fillColor: '#10b981',
         fillOpacity: 0.25,
         interactive: false
       });
       measureLayerGroup.addLayer(polygon);
 
-      // 多角形の中心(重心)に大きな面積ラベルを直接描画
+      // 重心に面積ラベル
       let sumLat = 0, sumLng = 0;
       pts.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
       const centerLat = sumLat / pts.length;
@@ -2942,31 +3042,77 @@ function renderMeasureLayers() {
 
       const areaIcon = L.divIcon({
         className: 'measure-area-label-wrap',
-        html: `<div class="measure-area-badge">面積: ${polyArea.toFixed(2)} ㎡<br><span style="font-size:10px; font-weight:normal; color:#bae6fd;">(${tsubo.toFixed(1)} 坪)</span></div>`,
+        html: `<div class="measure-area-badge" style="background:rgba(6,78,59,0.88); border-color:#34d399;">面積: ${polyArea.toFixed(2)} ㎡<br><span style="font-size:10px; font-weight:normal; color:#a7f3d0;">(${tsubo.toFixed(1)} 坪)</span></div>`,
         iconAnchor: [50, 20]
       });
       measureLayerGroup.addLayer(L.marker([centerLat, centerLng], { icon: areaIcon, interactive: false }));
-    }
 
-    // 各区間の中央に距離ラベル
-    for (let i = 1; i < pts.length; i++) {
-      const midLat = (pts[i].lat + pts[i - 1].lat) / 2;
-      const midLng = (pts[i].lng + pts[i - 1].lng) / 2;
-      const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      // 各辺の距離ラベル（末尾から先頭への閉合辺を含む）
+      for (let i = 0; i < pts.length; i++) {
+        const nextIdx = (i + 1) % pts.length;
+        const midLat = (pts[i].lat + pts[nextIdx].lat) / 2;
+        const midLng = (pts[i].lng + pts[nextIdx].lng) / 2;
+        const d = Math.hypot(pts[nextIdx].x - pts[i].x, pts[nextIdx].y - pts[i].y);
+        const labelIcon = L.divIcon({
+          className: 'measure-dist-label',
+          html: `<div style="background:rgba(6,78,59,0.85); color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid rgba(167,243,208,0.6); pointer-events:none;">${d.toFixed(3)}m</div>`,
+          iconAnchor: [20, 10]
+        });
+        measureLayerGroup.addLayer(L.marker([midLat, midLng], { icon: labelIcon, interactive: false }));
+      }
+    } else if (latlngs.length === 2) {
+      // 2点の場合は通常の破線
+      const polyline = L.polyline(latlngs, {
+        color: '#059669',
+        weight: 3,
+        dashArray: '6, 6',
+        opacity: 0.9,
+        interactive: false
+      });
+      measureLayerGroup.addLayer(polyline);
+
+      const midLat = (pts[1].lat + pts[0].lat) / 2;
+      const midLng = (pts[1].lng + pts[0].lng) / 2;
+      const d = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
       const labelIcon = L.divIcon({
         className: 'measure-dist-label',
-        html: `<div style="background:rgba(15,23,42,0.85); color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid rgba(255,255,255,0.4); pointer-events:none;">${d.toFixed(3)}m</div>`,
+        html: `<div style="background:rgba(6,78,59,0.85); color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid rgba(167,243,208,0.6); pointer-events:none;">${d.toFixed(3)}m</div>`,
         iconAnchor: [20, 10]
       });
       measureLayerGroup.addLayer(L.marker([midLat, midLng], { icon: labelIcon, interactive: false }));
     }
+  } else {
+    // 距離計測モード (オープンな折れ線のみ、多角形面は絶対に描画しない)
+    if (latlngs.length >= 2) {
+      const polyline = L.polyline(latlngs, {
+        color: '#0284c7',
+        weight: 3.5,
+        dashArray: '6, 6',
+        opacity: 0.9,
+        interactive: false
+      });
+      measureLayerGroup.addLayer(polyline);
+
+      // 各区間の中央に距離ラベル
+      for (let i = 1; i < pts.length; i++) {
+        const midLat = (pts[i].lat + pts[i - 1].lat) / 2;
+        const midLng = (pts[i].lng + pts[i - 1].lng) / 2;
+        const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        const labelIcon = L.divIcon({
+          className: 'measure-dist-label',
+          html: `<div style="background:rgba(15,23,42,0.85); color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px; white-space:nowrap; border:1px solid rgba(255,255,255,0.4); pointer-events:none;">${d.toFixed(3)}m</div>`,
+          iconAnchor: [20, 10]
+        });
+        measureLayerGroup.addLayer(L.marker([midLat, midLng], { icon: labelIcon, interactive: false }));
+      }
+    }
   }
 
-  // 各点マーカー (番号付きピン)
+  // 各点マーカー (番号付きピン: 距離はブルー、面積はエメラルドグリーン)
   pts.forEach((p, idx) => {
     const numIcon = L.divIcon({
       className: 'measure-node-pin',
-      html: `<div style="background:#0284c7; color:white; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.4); pointer-events:none;">${idx + 1}</div>`,
+      html: `<div style="background:${mainColor}; color:white; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.4); pointer-events:none;">${idx + 1}</div>`,
       iconSize: [22, 22],
       iconAnchor: [11, 11]
     });
