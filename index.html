@@ -842,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.8 (2026/11/23 18:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.9 (2026/11/23 21:10)</span>
     </div>
   </div>
 
@@ -1333,7 +1333,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.8 (2026/11/23 18:55)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.9 (2026/11/23 21:10)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2727,6 +2727,29 @@ function renderKnownPoints() {
       });
 
       const marker = L.marker([pt.lat, pt.lng], { icon: ptIcon });
+
+      // 計測モード時のスナップタップ優先ハンドラ (ポップアップを開かず計測点として即追加)
+      marker.on('click', (e) => {
+        if (State.measureActive) {
+          if (e.originalEvent) e.originalEvent.stopPropagation();
+          marker.closePopup();
+          const snapPt = {
+            lat: pt.lat,
+            lng: pt.lng,
+            x: pt.x,
+            y: pt.y,
+            z: (typeof pt.h === 'number' && !isNaN(pt.h)) ? pt.h : (parseFloat(pt.h) || null),
+            name: pt.name || `既知点 #${idx + 1}`,
+            type: '既知点',
+            source: 'known'
+          };
+          triggerSnapFeedback(snapPt);
+          addMeasurePoint(snapPt);
+        }
+      });
+      marker.on('popupopen', () => {
+        if (State.measureActive) marker.closePopup();
+      });
 
       // ポップアップ内容
       const zoneName = JGD_ZONES.find(z => z.id === (pt.zoneId || State.currentZoneId))?.name || '';
@@ -4704,32 +4727,38 @@ function buildDxfSnapPointsCache() {
 }
 
 // タップ/ホバー位置から最も近いスナップ点を探索 (事前キャッシュによる爆速探索)
-function findNearestSnapPoint(clickLatLng, maxPixelDist = 32) {
+function findNearestSnapPoint(clickLatLng, maxPixelDist = 38) {
   if (!State.snapEnabled) return null;
   const clickPt = map.latLngToContainerPoint(clickLatLng);
-  const bounds = map.getBounds().pad(0.08); // 画面内＋少し外側まで
+  const bounds = map.getBounds().pad(0.12); // 画面内＋少し外側まで探索
   let best = null;
   let minDist = maxPixelDist;
 
-  // 1. 既知点
+  // 1. 既知点 (座標未計算の場合は自動補完)
   const known = State.knownPoints || [];
   for (let i = 0; i < known.length; i++) {
     const kp = known[i];
-    if (bounds.contains([kp.lat, kp.lng])) {
-      const screenPt = map.latLngToContainerPoint([kp.lat, kp.lng]);
-      const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
-      if (d < minDist) {
-        minDist = d;
-        best = {
-          lat: kp.lat,
-          lng: kp.lng,
-          x: kp.x,
-          y: kp.y,
-          z: (typeof kp.h === 'number' && !isNaN(kp.h)) ? kp.h : (parseFloat(kp.h) || null),
-          name: kp.name || '既知点',
-          type: '既知点',
-          source: 'known'
-        };
+    if ((kp.lat === null || kp.lat === undefined || kp.lng === null || kp.lng === undefined) && typeof kp.x === 'number' && typeof kp.y === 'number') {
+      const ll = xyToLatLng(kp.x, kp.y, kp.zoneId || State.currentZoneId, kp.isSurveySaved !== undefined ? kp.isSurveySaved : State.isSurveyAxis);
+      if (ll) { kp.lat = ll.lat; kp.lng = ll.lng; }
+    }
+    if (kp.lat !== null && kp.lat !== undefined && kp.lng !== null && kp.lng !== undefined) {
+      if (bounds.contains([kp.lat, kp.lng])) {
+        const screenPt = map.latLngToContainerPoint([kp.lat, kp.lng]);
+        const d = Math.hypot(screenPt.x - clickPt.x, screenPt.y - clickPt.y);
+        if (d < minDist) {
+          minDist = d;
+          best = {
+            lat: kp.lat,
+            lng: kp.lng,
+            x: kp.x,
+            y: kp.y,
+            z: (typeof kp.h === 'number' && !isNaN(kp.h)) ? kp.h : (parseFloat(kp.h) || null),
+            name: kp.name || `既知点 #${i+1}`,
+            type: '既知点',
+            source: 'known'
+          };
+        }
       }
     }
   }
@@ -5908,7 +5937,7 @@ function loadSettingsAndPoints() {
 // --- 地図クリックイベント (スナップ計測 / 通常タップ & 逆打ち誘導) ---
 map.on('click', async (e) => {
   // 1. スナップ探索 (指先28px以内の最近傍CAD端点/頂点/点/既知点)
-  const snapPt = findNearestSnapPoint(e.latlng, 32);
+  const snapPt = findNearestSnapPoint(e.latlng, 38);
   if (snapPt) {
     triggerSnapFeedback(snapPt);
   }
