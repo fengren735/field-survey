@@ -842,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.9 (2026/11/23 21:10)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.0 (2026/11/23 22:25)</span>
     </div>
   </div>
 
@@ -1263,11 +1263,21 @@
               <b style="font-size:12px; color:#0f172a;" id="tsResultTitle">📊 展開サマリー</b>
               <span id="tsResultCounts" style="font-size:11px; color:#0284c7; font-weight:bold;"></span>
             </div>
+            <!-- 結線・コードエラー (赤枠) -->
             <div id="tsErrorSection" style="display:none; margin-top:6px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:8px;">
               <div style="color:#b91c1c; font-size:11px; font-weight:bold; display:flex; align-items:center; gap:4px;">
-                <span>⚠️ コードエラー / 結線ブレイク (<span id="tsErrorCount">0</span> 件)</span>
+                <span>⚠️ 結線・コードエラー (<span id="tsErrorCount">0</span> 件)</span>
               </div>
               <div id="tsErrorList" style="max-height:120px; overflow-y:auto; font-size:10px; color:#991b1b; margin-top:4px; font-family:monospace; line-height:1.4;">
+              </div>
+            </div>
+
+            <!-- 観測精度チェック / 後視点誤差 (オレンジ枠) -->
+            <div id="tsAccuracyWarnSection" style="display:none; margin-top:6px; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px;">
+              <div style="color:#b45309; font-size:11px; font-weight:bold; display:flex; align-items:center; gap:4px;">
+                <span>📐 観測精度チェック / 後視点誤差 (<span id="tsAccuracyWarnCount">0</span> 件)</span>
+              </div>
+              <div id="tsAccuracyWarnList" style="max-height:120px; overflow-y:auto; font-size:10px; color:#92400e; margin-top:4px; font-family:monospace; line-height:1.4;">
               </div>
             </div>
 
@@ -1333,7 +1343,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.9 (2026/11/23 21:10)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.0 (2026/11/23 22:25)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2144,20 +2154,46 @@ function initUi() {
               }
             }
 
-            // エラー・ブレイク表示
-            const allErrors = (o1kRes.logs.filter(l => l.level === 'danger' || l.level === 'warning')).concat(
-              expanded.errors.map(e => ({ level: 'danger', msg: e.msg }))
-            );
+            // エラー・警告の分離表示
+            const codeErrors = expanded.errors || [];
+            const accuracyWarnings = o1kRes.logs ? o1kRes.logs.filter(l => l.level === 'danger' || l.level === 'warning') : [];
+
+            const warnSec = document.getElementById('tsAccuracyWarnSection');
+            const warnCountEl = document.getElementById('tsAccuracyWarnCount');
+            const warnListEl = document.getElementById('tsAccuracyWarnList');
             const successSec = document.getElementById('tsSuccessSection');
 
-            if (allErrors.length > 0) {
+            // ① 結線・コードエラー（赤枠）
+            if (codeErrors.length > 0) {
               errSec.style.display = 'block';
-              if (successSec) successSec.style.display = 'none';
-              errCountEl.textContent = allErrors.length;
-              errListEl.innerHTML = allErrors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
+              errCountEl.textContent = codeErrors.length;
+              errListEl.innerHTML = codeErrors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
             } else {
               errSec.style.display = 'none';
+            }
+
+            // ② 観測精度チェック（オレンジ枠）
+            if (warnSec && warnCountEl && warnListEl) {
+              if (accuracyWarnings.length > 0) {
+                warnSec.style.display = 'block';
+                warnCountEl.textContent = accuracyWarnings.length;
+                warnListEl.innerHTML = accuracyWarnings.map(w => `<div>${escapeHtml(w.msg)}</div>`).join('');
+              } else {
+                warnSec.style.display = 'none';
+              }
+            }
+
+            // ③ どちらもゼロならクリア称賛（緑枠）
+            if (codeErrors.length === 0 && accuracyWarnings.length === 0) {
               if (successSec) successSec.style.display = 'block';
+              showToast('🎉 観測精度クリア！エラー・警告ゼロで展開されました✨');
+            } else {
+              if (successSec) successSec.style.display = 'none';
+              if (codeErrors.length > 0) {
+                showToast(`展開完了: 結線${expanded.lines.length}本 (結線エラー${codeErrors.length}件)`);
+              } else {
+                showToast(`展開完了: 結線${expanded.lines.length}本 (精度チェック${accuracyWarnings.length}件)`);
+              }
             }
 
             document.getElementById('btnDownloadT3dCsv').disabled = false;
@@ -2240,6 +2276,9 @@ function initUi() {
 
             // 結線一覧ボタンの表示更新 (タップでその線へ超拡大ズーム)
             updateTsLinesList(expanded.lines);
+
+            const warnSec = document.getElementById('tsAccuracyWarnSection');
+            if (warnSec) warnSec.style.display = 'none';
 
             const successSec = document.getElementById('tsSuccessSection');
             if (expanded.errors.length > 0) {
@@ -4558,6 +4597,10 @@ function clearTsData() {
 
   const resPanel = document.getElementById('tsResultPanel');
   if (resPanel) resPanel.style.display = 'none';
+  const errSec = document.getElementById('tsErrorSection');
+  if (errSec) errSec.style.display = 'none';
+  const warnSec = document.getElementById('tsAccuracyWarnSection');
+  if (warnSec) warnSec.style.display = 'none';
   const successSec = document.getElementById('tsSuccessSection');
   if (successSec) successSec.style.display = 'none';
   const taiKaiSec = document.getElementById('tsTaiKaiSection');
