@@ -577,8 +577,8 @@
         filter: drop-shadow(0 0 5px rgba(2, 132, 199, 0.85));
       }
       50% {
-        opacity: 0.38;
-        filter: drop-shadow(0 0 1px rgba(2, 132, 199, 0.2));
+        opacity: 0.75;
+        filter: drop-shadow(0 0 2px rgba(2, 132, 199, 0.35));
       }
       100% {
         opacity: 1;
@@ -831,7 +831,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.1 (2026/11/23 12:35)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.2 (2026/11/23 14:55)</span>
     </div>
   </div>
 
@@ -1310,7 +1310,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.1 (2026/11/23 12:35)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.2 (2026/11/23 14:55)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1657,6 +1657,12 @@ let gpsCircle = null;
 const knownMarkerGroup = L.layerGroup().addTo(map);
 const dxfLayerGroup = L.featureGroup().addTo(map); // DXF図面グループ (線・ポリライン・点)
 const dxfTextGroup = L.layerGroup().addTo(map); // DXF文字グループ (注記・寸法)
+
+// TS展開レイヤー専用最前面ペイン (DXFより確実に前面に描画)
+if (!map.getPane('tsPane')) {
+  map.createPane('tsPane');
+  map.getPane('tsPane').style.zIndex = '480';
+}
 const tsLayerGroup = L.featureGroup().addTo(map); // TS観測・T3D展開図形グループ (遺構線・ポリライン・標高点・赤丸エラー)
 const tsTextGroup = L.layerGroup().addTo(map); // TS観測・T3D展開注記グループ (点名・標高・属性)
 const snapLayerGroup = L.layerGroup().addTo(map); // スナップマーカー
@@ -4042,24 +4048,81 @@ function renderTsLayers(expandedData, showText = true) {
 
   const { lines, points } = expandedData;
 
-  // 1. 結線 (ポリライン・ポリゴン)
+  // 1. 結線 (ポリライン・ポリゴン) - 最前面tsPane & 白フチ二重描画で確実に視認可能に
   lines.forEach((l, idx) => {
     const latlngs = l.points.map(p => [p.lat, p.lng]);
-    const polyOpts = {
-      color: l.color,
-      weight: l.weight || 2.5,
-      opacity: 0.9,
+    const baseWeight = Math.max(l.weight || 3.5, 3.5);
+
+    // 1-A. 白フチ (外枠ライン: どんな背景・DXF太線の上でもコントラストを保ち浮き上がらせる)
+    const haloOpts = {
+      pane: 'tsPane',
+      color: '#ffffff',
+      weight: baseWeight + 3.5,
+      opacity: 0.95,
       dashArray: l.dashArray || null,
       fill: false,
-      interactive: false,
+      interactive: false
+    };
+    const haloPoly = l.isClosed
+      ? L.polygon(latlngs, haloOpts)
+      : L.polyline(latlngs, haloOpts);
+    tsLayerGroup.addLayer(haloPoly);
+
+    // 1-B. 実線 (各線種カラー)
+    const polyOpts = {
+      pane: 'tsPane',
+      color: l.color,
+      weight: baseWeight,
+      opacity: 1,
+      dashArray: l.dashArray || null,
+      fill: false,
+      interactive: true,
       className: 'ts-pulse-anim'
     };
 
     const poly = l.isClosed
-      ? L.polygon(latlngs, { ...polyOpts, fill: true, fillColor: l.color, fillOpacity: 0.08 })
+      ? L.polygon(latlngs, { ...polyOpts, fill: true, fillColor: l.color, fillOpacity: 0.12 })
       : L.polyline(latlngs, polyOpts);
 
+    poly.bindPopup(`
+      <div style="font-size:12px; min-width:140px;">
+        <b style="color:${l.color}; font-size:13px;">${escapeHtml(l.layer)}</b><br>
+        <div style="margin:4px 0; color:#334155; font-size:11px;">
+          頂点数: <b>${l.points.length}</b> 点<br>
+          始点: ${escapeHtml(l.points[0].rawCode || '始点')}<br>
+          終点: ${escapeHtml(l.points[l.points.length - 1].rawCode || '終点')}
+        </div>
+      </div>
+    `);
     tsLayerGroup.addLayer(poly);
+
+    // 1-C. 結線の端点ノード (始点・終点) - 70cm等の微小線でも両端が確実に視認できるようにマーク
+    l.points.forEach((p, vIdx) => {
+      const isStart = (vIdx === 0);
+      const isEnd = (vIdx === l.points.length - 1);
+      if (isStart || isEnd) {
+        const nodeMarker = L.circleMarker([p.lat, p.lng], {
+          pane: 'tsPane',
+          radius: 3.5,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: l.color,
+          fillOpacity: 1,
+          interactive: true
+        });
+        nodeMarker.bindPopup(`
+          <div style="font-size:12px;">
+            <b style="color:${l.color};">${escapeHtml(l.layer)} (${isStart ? '始点' : '終点'}: ${escapeHtml(p.rawCode || '')})</b><br>
+            <div style="font-family:monospace; margin-top:2px;">
+              X: ${p.x.toFixed(3)}<br>
+              Y: ${p.y.toFixed(3)}<br>
+              H: ${typeof p.z === 'number' ? p.z.toFixed(3) + ' m' : '---'}
+            </div>
+          </div>
+        `);
+        tsLayerGroup.addLayer(nodeMarker);
+      }
+    });
 
     // スナップ点に全頂点を登録
     l.points.forEach((p, vIdx) => {
@@ -4076,7 +4139,7 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
 
-      // 注記テキスト表示 (明滅バッジ)
+      // 注記テキスト表示 (p.naiyouがある場合のみ)
       if (showText && p.naiyou) {
         const textIcon = L.divIcon({
           className: 'ts-text-label ts-pulse-anim',
@@ -4088,11 +4151,12 @@ function renderTsLayers(expandedData, showText = true) {
     });
   });
 
-  // 2. 単独点・標高点・赤丸エラー点 (半径6 / 直径12px: 既知点より控えめなサイズ)
+  // 2. 単独点・標高点・赤丸エラー点 (最前面 tsPane)
   points.forEach(p => {
     if (p.isError) {
       // 赤丸エラー点 (半径6、白フチ、明滅パルスアニメーション)
       const errMarker = L.circleMarker([p.lat, p.lng], {
+        pane: 'tsPane',
         radius: 6,
         color: '#ffffff',
         weight: 2,
@@ -4135,8 +4199,9 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
     } else {
-      // 正常なシンボル・標高点 (半径6、白フチ、明滅パルスアニメーション)
+      // 正常なシンボル・標高点 (最前面 tsPane, 半径6、白フチ、明滅パルスアニメーション)
       const marker = L.circleMarker([p.lat, p.lng], {
+        pane: 'tsPane',
         radius: 6,
         color: '#ffffff',
         weight: 2,
