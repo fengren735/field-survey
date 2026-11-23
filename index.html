@@ -831,7 +831,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.3 (2026/11/23 15:15)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.4 (2026/11/23 15:30)</span>
     </div>
   </div>
 
@@ -1310,7 +1310,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.3 (2026/11/23 15:15)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.4 (2026/11/23 15:30)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1671,6 +1671,40 @@ const navLayerGroup = L.layerGroup().addTo(map); // 逆打ち誘導ライン・�
 
 // --- 5. UIの初期化とイベント設定 ---
 function initUi() {
+  // --- A. 基本UIイベントリスナーを最優先で登録 (どんなデータ異常があってもボタンが確実に動くように保証) ---
+  const bottomBar = document.getElementById('bottomBar');
+  const toggleSheet = () => {
+    bottomBar.classList.toggle('expanded');
+    const isExpanded = bottomBar.classList.contains('expanded');
+    document.getElementById('btnToggleSheet').textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
+  };
+  const pullHandle = document.getElementById('pullHandle');
+  if (pullHandle) pullHandle.addEventListener('click', toggleSheet);
+  const btnToggle = document.getElementById('btnToggleSheet');
+  if (btnToggle) {
+    btnToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSheet();
+    });
+  }
+  const summaryCard = document.getElementById('summaryCard');
+  if (summaryCard) summaryCard.addEventListener('click', toggleSheet);
+  const btnOpen = document.getElementById('btnOpenSheet');
+  if (btnOpen) {
+    btnOpen.addEventListener('click', () => {
+      bottomBar.classList.add('expanded');
+      document.getElementById('btnToggleSheet').textContent = '閉じる ▴';
+      activateTab('tab-points');
+    });
+  }
+
+  // タブ切り替え
+  document.querySelectorAll('.tab-item').forEach(item => {
+    item.addEventListener('click', () => {
+      activateTab(item.getAttribute('data-tab'));
+    });
+  });
+
   // 系のセレクトボックスを生成
   const selZone = document.getElementById('selectZone');
   const modalZone = document.getElementById('modalZone');
@@ -1713,10 +1747,14 @@ function initUi() {
   State.dxfZoneId = State.currentZoneId;
   State.tsZoneId = State.currentZoneId;
 
-  // ローカルストレージ復元
-  loadSettingsAndPoints();
-  updateAxisLabels();
-  renderKnownPoints();
+  // ローカルストレージ復元 & 描画 (安全にtry-catch保護)
+  try {
+    loadSettingsAndPoints();
+    updateAxisLabels();
+    renderKnownPoints();
+  } catch (err) {
+    console.warn('初期データ復元・描画エラー (安全にスキップ):', err);
+  }
 
   // イベントリスナー登録
   selZone.addEventListener('change', (e) => {
@@ -1750,32 +1788,6 @@ function initUi() {
     renderKnownPoints();
     saveSettings();
     showToast(`軸を「${State.isSurveyAxis ? '測量系 (X=北, Y=東)' : '数学系 (X=東, Y=北)'}」に切替`);
-  });
-
-  // ボトムバー展開/収納
-  const bottomBar = document.getElementById('bottomBar');
-  const toggleSheet = () => {
-    bottomBar.classList.toggle('expanded');
-    const isExpanded = bottomBar.classList.contains('expanded');
-    document.getElementById('btnToggleSheet').textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
-  };
-  document.getElementById('pullHandle').addEventListener('click', toggleSheet);
-  document.getElementById('btnToggleSheet').addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleSheet();
-  });
-  document.getElementById('summaryCard').addEventListener('click', toggleSheet);
-  document.getElementById('btnOpenSheet').addEventListener('click', () => {
-    bottomBar.classList.add('expanded');
-    document.getElementById('btnToggleSheet').textContent = '閉じる ▴';
-    activateTab('tab-points');
-  });
-
-  // タブ切り替え
-  document.querySelectorAll('.tab-item').forEach(item => {
-    item.addEventListener('click', () => {
-      activateTab(item.getAttribute('data-tab'));
-    });
   });
 
   // キャッシュ強制更新ボタン
@@ -2517,57 +2529,72 @@ function renderKnownPoints() {
     if (!pt.id) {
       pt.id = 'pt_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substr(2, 5);
     }
-    // 平面直角座標から緯度経度を再計算 (各点の保存系に基づく)
-    const latlng = xyToLatLng(pt.x, pt.y, pt.zoneId || State.currentZoneId, pt.isSurveySaved !== undefined ? pt.isSurveySaved : isSur);
-    pt.lat = latlng.lat;
-    pt.lng = latlng.lng;
+    // 平面直角座標から緯度経度を再計算 (各点の保存系に基づく) - 完全null安全ガード
+    let latlng = null;
+    try {
+      if (typeof pt.x === 'number' && typeof pt.y === 'number' && !isNaN(pt.x) && !isNaN(pt.y)) {
+        latlng = xyToLatLng(pt.x, pt.y, pt.zoneId || State.currentZoneId, pt.isSurveySaved !== undefined ? pt.isSurveySaved : isSur);
+      }
+    } catch (e) {
+      console.warn('座標変換エラー (安全にスキップ):', e);
+    }
+
+    if (latlng && typeof latlng.lat === 'number' && typeof latlng.lng === 'number') {
+      pt.lat = latlng.lat;
+      pt.lng = latlng.lng;
+    } else {
+      pt.lat = null;
+      pt.lng = null;
+    }
 
     const pName = pt.name || `点 #${idx + 1}`;
 
-    // マーカー生成 (★マーク中心が正確な座標位置、直上に点名ラベルを常時表示)
-    const starSvg = `
-      <svg viewBox="0 0 24 24" width="28" height="28" style="overflow:visible; display:block;">
-        <path d="M12 1.5l2.83 6.94 7.42.61-5.63 4.88 1.69 7.32L12 17.27l-6.31 4.08 1.69-7.32-5.63-4.88 7.42-.61L12 1.5z"
-              fill="#f59e0b" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
-        <circle cx="12" cy="12" r="2.2" fill="#ffffff" />
-      </svg>
-    `;
-    const ptIcon = L.divIcon({
-      className: 'known-marker-div-icon',
-      html: `
-        <div class="known-marker-wrap">
-          <div class="known-marker-star">${starSvg}</div>
-          ${showLabel ? `<div class="known-marker-label">${escapeHtml(pName)}</div>` : ''}
-        </div>
-      `,
-      iconSize: [0, 0],
-      iconAnchor: [0, 0]
-    });
+    // 緯度経度が有効な場合のみ地図マーカー生成
+    if (pt.lat !== null && pt.lng !== null) {
+      const starSvg = `
+        <svg viewBox="0 0 24 24" width="28" height="28" style="overflow:visible; display:block;">
+          <path d="M12 1.5l2.83 6.94 7.42.61-5.63 4.88 1.69 7.32L12 17.27l-6.31 4.08 1.69-7.32-5.63-4.88 7.42-.61L12 1.5z"
+                fill="#f59e0b" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+          <circle cx="12" cy="12" r="2.2" fill="#ffffff" />
+        </svg>
+      `;
+      const ptIcon = L.divIcon({
+        className: 'known-marker-div-icon',
+        html: `
+          <div class="known-marker-wrap">
+            <div class="known-marker-star">${starSvg}</div>
+            ${showLabel ? `<div class="known-marker-label">${escapeHtml(pName)}</div>` : ''}
+          </div>
+        `,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
+      });
 
-    const marker = L.marker([pt.lat, pt.lng], { icon: ptIcon });
+      const marker = L.marker([pt.lat, pt.lng], { icon: ptIcon });
 
-    // ポップアップ内容
-    const zoneName = JGD_ZONES.find(z => z.id === (pt.zoneId || State.currentZoneId))?.name || '';
-    const popupHtml = `
-      <div style="font-size:12px; min-width:160px;">
-        <b style="color:#0284c7; font-size:13px;">${escapeHtml(pt.name || `点 #${idx+1}`)}</b><br>
-        <div style="font-family:monospace; margin:4px 0;">
-          X: ${formatCoord(pt.x, 3)} m<br>
-          Y: ${formatCoord(pt.y, 3)} m<br>
-          H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? formatCoord(pt.h, 3) + ' m' : '---'}<br>
-          ${typeof pt.scale === 'number' ? `縮尺係数: ${pt.scale}<br>` : ''}
-          ${typeof pt.geoid === 'number' ? `ジオイド高: ${pt.geoid} m<br>` : ''}
+      // ポップアップ内容
+      const zoneName = JGD_ZONES.find(z => z.id === (pt.zoneId || State.currentZoneId))?.name || '';
+      const popupHtml = `
+        <div style="font-size:12px; min-width:160px;">
+          <b style="color:#0284c7; font-size:13px;">${escapeHtml(pt.name || `点 #${idx+1}`)}</b><br>
+          <div style="font-family:monospace; margin:4px 0;">
+            X: ${formatCoord(pt.x, 3)} m<br>
+            Y: ${formatCoord(pt.y, 3)} m<br>
+            H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? formatCoord(pt.h, 3) + ' m' : '---'}<br>
+            ${typeof pt.scale === 'number' ? `縮尺係数: ${pt.scale}<br>` : ''}
+            ${typeof pt.geoid === 'number' ? `ジオイド高: ${pt.geoid} m<br>` : ''}
+          </div>
+          <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
+          <div style="margin-top:6px; display:flex; gap:4px;">
+            <button onclick="window.navToPoint('${pt.id}', ${idx})" style="background:#e0f2fe; color:#0284c7; border:1px solid #7dd3fc; border-radius:4px; font-weight:bold; padding:3px 6px; font-size:11px; cursor:pointer;">🎯 誘導</button>
+            <button onclick="window.editPoint('${pt.id}', ${idx})" style="flex:1; padding:3px 6px; font-size:11px; cursor:pointer;">編集</button>
+            <button onclick="window.deletePoint('${pt.id}', ${idx})" style="color:#ef4444; padding:3px 6px; font-size:11px; cursor:pointer;">削除</button>
+          </div>
         </div>
-        <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
-        <div style="margin-top:6px; display:flex; gap:4px;">
-          <button onclick="window.navToPoint('${pt.id}', ${idx})" style="background:#e0f2fe; color:#0284c7; border:1px solid #7dd3fc; border-radius:4px; font-weight:bold; padding:3px 6px; font-size:11px; cursor:pointer;">🎯 誘導</button>
-          <button onclick="window.editPoint('${pt.id}', ${idx})" style="flex:1; padding:3px 6px; font-size:11px; cursor:pointer;">編集</button>
-          <button onclick="window.deletePoint('${pt.id}', ${idx})" style="color:#ef4444; padding:3px 6px; font-size:11px; cursor:pointer;">削除</button>
-        </div>
-      </div>
-    `;
-    marker.bindPopup(popupHtml);
-    marker.addTo(knownMarkerGroup);
+      `;
+      marker.bindPopup(popupHtml);
+      marker.addTo(knownMarkerGroup);
+    }
 
     // リストカード生成
     const card = document.createElement('div');
@@ -2577,6 +2604,7 @@ function renderKnownPoints() {
         <div class="point-name">
           <span style="background:#e0f2fe; color:#0369a1; border-radius:4px; padding:2px 7px; font-size:11px; font-weight:800;">#${idx+1}</span>
           <span style="font-size:14px; font-weight:800; color:#0369a1; letter-spacing:0.3px;">${escapeHtml(pt.name || `既知点 ${idx+1}`)}</span>
+          ${pt.lat === null ? '<span style="background:#fef2f2; color:#ef4444; font-size:10px; padding:1px 5px; border-radius:3px; margin-left:4px; font-weight:bold;">⚠️ 座標未確定</span>' : ''}
         </div>
         <div class="point-coords">
           X: ${formatCoord(pt.x, 3)}, Y: ${formatCoord(pt.y, 3)}${pt.h !== '' && pt.h !== null ? `, H: ${formatCoord(pt.h, 2)}` : ''}
@@ -2585,8 +2613,8 @@ function renderKnownPoints() {
         </div>
       </div>
       <div class="point-actions">
-        <button class="btn btn-secondary btn-sm" onclick="window.navToPoint('${pt.id}', ${idx})" title="誘導ナビ" style="color:#0284c7; font-weight:bold; border-color:#7dd3fc; background:#f0f9ff;">🎯 誘導</button>
-        <button class="btn btn-secondary btn-sm" onclick="window.focusPoint(${pt.lat}, ${pt.lng})">表示</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.navToPoint('${pt.id}', ${idx})" title="誘導ナビ" style="color:#0284c7; font-weight:bold; border-color:#7dd3fc; background:#f0f9ff;" ${pt.lat === null ? 'disabled' : ''}>🎯 誘導</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.focusPoint(${pt.lat}, ${pt.lng})" ${pt.lat === null ? 'disabled' : ''}>表示</button>
         <button class="btn btn-secondary btn-sm" onclick="window.editPoint('${pt.id}', ${idx})">編集</button>
         <button class="btn btn-danger btn-sm" onclick="window.deletePoint('${pt.id}', ${idx})">×</button>
       </div>
@@ -4981,6 +5009,7 @@ function updateStakeoutNav() {
 }
 
 window.focusPoint = (lat, lng) => {
+  if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return;
   map.setView([lat, lng], 18, { animate: true });
   document.getElementById('bottomBar').classList.remove('expanded');
   document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
@@ -4990,7 +5019,7 @@ window.navToPoint = (id, targetIdx = -1) => {
   let pt = null;
   if (id && id !== 'undefined') pt = State.knownPoints.find(p => p.id === id);
   if (!pt && targetIdx >= 0 && targetIdx < State.knownPoints.length) pt = State.knownPoints[targetIdx];
-  if (!pt) return;
+  if (!pt || pt.lat === null || pt.lng === null) return;
   const curSur = latLngToXY(pt.lat, pt.lng, State.currentZoneId);
   startStakeoutNav({
     lat: pt.lat,
