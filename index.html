@@ -842,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.0 (2026/11/23 22:25)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.1 (2026/11/23 22:45)</span>
     </div>
   </div>
 
@@ -1343,7 +1343,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.0 (2026/11/23 22:25)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.1 (2026/11/23 22:45)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -3045,7 +3045,9 @@ function parseBinaryDxf(buffer) {
           currentEntity.vertices[1].z = val;
         }
         if (code === 1) currentEntity.text = val;
-        if (code === 70 && (val === 1 || val === 129)) {
+        // グループコード70 (フラグ): bit 0 (val & 1) が 1 なら閉じたポリライン (Closed Polyline)
+        // 3Dポリライン閉合(9=1+8)やカーブフィット閉合(3=1+2)等の合成フラグにも完全対応
+        if (code === 70 && ((val & 1) === 1)) {
           currentEntity.shape = true; // closed
           if (currentEntity.type === 'POLYLINE' && currentPolyline) {
             currentPolyline.shape = true;
@@ -3244,7 +3246,7 @@ function parseDxfFallback(text) {
         currentEntity.vertices[1].z = parseFloat(val);
       }
       if (code === 1) currentEntity.text = val;
-      if (code === 70 && (val === '1' || val === '129')) currentEntity.shape = true; // closed
+      if (code === 70 && ((parseInt(val, 10) & 1) === 1)) currentEntity.shape = true; // closed
     }
   }
   return { entities, tables: { layer: { layers: layers } } };
@@ -3430,10 +3432,22 @@ function renderDxfEntities(shouldZoom = false) {
       });
 
       if (latlngs.length >= 2) {
-        const isClosed = ent.shape === true || (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
-        const poly = isClosed
-          ? L.polygon(latlngs, { color: entColor, weight: weight, fill: false, opacity: 0.9, interactive: false })
-          : L.polyline(latlngs, { color: entColor, weight: weight, opacity: 0.9, interactive: false });
+        // 閉じたポリライン判定 (shapeフラグ、closedプロパティ、または始終点一致)
+        const isClosed = ent.shape === true || ent.closed === true ||
+          (typeof ent.shape === 'number' && (ent.shape & 1) === 1) ||
+          (ent.vertices[0].x === ent.vertices[ent.vertices.length - 1].x && ent.vertices[0].y === ent.vertices[ent.vertices.length - 1].y);
+
+        // 閉じたポリラインの場合は始点を末尾に追加して確実に1周結線 (CADと完全一致)
+        const polyPts = (isClosed && (latlngs[0][0] !== latlngs[latlngs.length - 1][0] || latlngs[0][1] !== latlngs[latlngs.length - 1][1]))
+          ? [...latlngs, latlngs[0]]
+          : latlngs;
+
+        const poly = L.polyline(polyPts, {
+          color: entColor,
+          weight: weight,
+          opacity: 0.9,
+          interactive: false
+        });
 
         dxfLayerGroup.addLayer(poly);
         polyCount++;
