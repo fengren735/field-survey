@@ -334,8 +334,9 @@
     .tab-item {
       flex: 1;
       text-align: center;
-      padding: 7px 4px;
-      font-size: 12px;
+      padding: 7px 2px;
+      font-size: 11px;
+      white-space: nowrap;
       font-weight: 600;
       color: var(--text-muted);
       border-radius: 6px;
@@ -841,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.6 (2026/11/23 17:45)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.7 (2026/11/23 18:35)</span>
     </div>
   </div>
 
@@ -997,9 +998,9 @@
         <!-- Tabs -->
         <div class="tab-bar">
           <div class="tab-item active" data-tab="tab-points">既知点 (<span id="knownCount">0</span>)</div>
-          <div class="tab-item" data-tab="tab-csv">CSV</div>
-          <div class="tab-item" data-tab="tab-dxf">CAD (DXF)</div>
-          <div class="tab-item" data-tab="tab-ts">📡 TS/T3D</div>
+          <div class="tab-item" data-tab="tab-csv">既知点取込</div>
+          <div class="tab-item" data-tab="tab-dxf">DXF読み込み</div>
+          <div class="tab-item" data-tab="tab-ts">📡 観測データ展開</div>
           <div class="tab-item" data-tab="tab-settings">系・設定</div>
         </div>
 
@@ -1332,7 +1333,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.6 (2026/11/23 17:45)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.7 (2026/11/23 18:35)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2244,22 +2245,35 @@ function initUi() {
         showToast('登録可能な対回観測成果がありません');
         return;
       }
+      const duplicates = State.tsLastTaiKaiPoints.filter(tp =>
+        State.knownPoints.some(kp => kp.name.trim().toUpperCase() === tp.name.trim().toUpperCase())
+      );
+
+      let shouldOverwrite = true;
+      if (duplicates.length > 0) {
+        const dupNames = duplicates.map(d => d.name).slice(0, 5).join(', ');
+        const ok = confirm(`同名の既知点（${dupNames}）が既に登録されています。\n対回観測の計算成果で上書きしますか？\n\n【OK】: 上書き更新する\n【キャンセル】: 重複をスキップして新規の点のみ追加する`);
+        shouldOverwrite = ok;
+      }
+
       let addedCount = 0;
       let updatedCount = 0;
       State.tsLastTaiKaiPoints.forEach(tp => {
-        const existingIdx = State.knownPoints.findIndex(kp => kp.name === tp.name);
+        const existingIdx = State.knownPoints.findIndex(kp => kp.name.trim().toUpperCase() === tp.name.trim().toUpperCase());
         if (existingIdx >= 0) {
-          State.knownPoints[existingIdx] = {
-            ...State.knownPoints[existingIdx],
-            id: State.knownPoints[existingIdx].id || ('pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
-            x: tp.x,
-            y: tp.y,
-            z: tp.z,
-            scale: tp.scale,
-            geoid: tp.geoid,
-            comment: tp.comment
-          };
-          updatedCount++;
+          if (shouldOverwrite) {
+            State.knownPoints[existingIdx] = {
+              ...State.knownPoints[existingIdx],
+              id: State.knownPoints[existingIdx].id || ('pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+              x: tp.x,
+              y: tp.y,
+              z: tp.z,
+              scale: tp.scale,
+              geoid: tp.geoid,
+              comment: tp.comment
+            };
+            updatedCount++;
+          }
         } else {
           State.knownPoints.push({
             id: 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
@@ -2732,7 +2746,7 @@ function renderKnownPoints() {
 function parseBinaryDxf(buffer) {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
-  let offset = 22; // "AutoCAD Binary DXF\r\n\x1a\0" (22 bytes)
+  let offset = 22; // "AutoCAD Binary DXF\n\x1a\0" (22 bytes)
 
   const decoderShiftJis = new TextDecoder('shift_jis');
   const decoderUtf8 = new TextDecoder('utf-8');
@@ -3151,7 +3165,7 @@ async function handleDxfFileSelect(e) {
       reader.readAsArrayBuffer(file);
     });
 
-    // バイナリシグネチャ判定: "AutoCAD Binary DXF\r\n\x1a\0" (22バイト)
+    // バイナリシグネチャ判定: "AutoCAD Binary DXF\n\x1a\0" (22バイト)
     let isBinary = false;
     if (buffer.byteLength >= 22) {
       const u8 = new Uint8Array(buffer, 0, 22);
@@ -4524,7 +4538,7 @@ function downloadT3dCsv() {
     outputLines.push(`${p.lineNum},${p.name},${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`);
   });
 
-  const csvContent = "\uFEFF" + outputLines.join('\r\n');
+  const csvContent = "\uFEFF" + outputLines.join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -5324,13 +5338,38 @@ function savePointFromModal() {
     return;
   }
 
+  const targetName = name || `点 #${State.knownPoints.length + 1}`;
+
+  // 同名既知点の重複チェック (自分自身の編集時は除く)
+  const dupIdx = State.knownPoints.findIndex(p => p.name.trim().toUpperCase() === targetName.toUpperCase() && p.id !== editId);
+  if (dupIdx !== -1) {
+    const existing = State.knownPoints[dupIdx];
+    const ok = confirm(`同名の既知点「${existing.name}」が既に登録されています。\n上書き更新しますか？\n\n【既存座標】\nX: ${existing.x.toFixed(3)}, Y: ${existing.y.toFixed(3)}, H: ${existing.h !== null && existing.h !== undefined ? existing.h.toFixed(3) : '---'}\n\n【新しい座標】\nX: ${x.toFixed(3)}, Y: ${y.toFixed(3)}, H: ${h !== null ? h.toFixed(3) : '---'}`);
+    if (!ok) return;
+
+    State.knownPoints[dupIdx] = {
+      ...existing,
+      name: targetName,
+      x: x,
+      y: y,
+      h: h,
+      zoneId: zoneId,
+      isSurveySaved: State.isSurveyAxis
+    };
+    showToast(`既知点「${targetName}」を上書き更新しました`);
+    savePoints();
+    renderKnownPoints();
+    closeModal();
+    return;
+  }
+
   if (editId) {
     // 編集
     const idx = State.knownPoints.findIndex(p => p.id === editId);
     if (idx !== -1) {
       State.knownPoints[idx] = {
         ...State.knownPoints[idx],
-        name: name || `点 #${idx+1}`,
+        name: targetName,
         x: x,
         y: y,
         h: h,
@@ -5343,7 +5382,7 @@ function savePointFromModal() {
     // 新規
     const newPt = {
       id: 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      name: name || `点 #${State.knownPoints.length + 1}`,
+      name: targetName,
       x: x,
       y: y,
       h: h,
@@ -5376,9 +5415,39 @@ function savePointFromInline() {
     return;
   }
 
+  const targetName = name || `点 #${State.knownPoints.length + 1}`;
+
+  // 同名既知点の重複チェック
+  const dupIdx = State.knownPoints.findIndex(p => p.name.trim().toUpperCase() === targetName.toUpperCase());
+  if (dupIdx !== -1) {
+    const existing = State.knownPoints[dupIdx];
+    const ok = confirm(`同名の既知点「${existing.name}」が既に登録されています。\n上書き更新しますか？\n\n【既存座標】\nX: ${existing.x.toFixed(3)}, Y: ${existing.y.toFixed(3)}, H: ${existing.h !== null && existing.h !== undefined ? existing.h.toFixed(3) : '---'}\n\n【新しい座標】\nX: ${x.toFixed(3)}, Y: ${y.toFixed(3)}, H: ${h !== null ? h.toFixed(3) : '---'}`);
+    if (!ok) return;
+
+    State.knownPoints[dupIdx] = {
+      ...existing,
+      name: targetName,
+      x: x,
+      y: y,
+      h: h,
+      zoneId: zoneId,
+      isSurveySaved: State.isSurveyAxis
+    };
+    showToast(`既知点「${targetName}」を上書き更新しました`);
+    savePoints();
+    renderKnownPoints();
+
+    // 入力欄をクリア
+    document.getElementById('inlinePointName').value = '';
+    document.getElementById('inlineCoordX').value = '';
+    document.getElementById('inlineCoordY').value = '';
+    document.getElementById('inlineCoordH').value = '';
+    return;
+  }
+
   const newPt = {
     id: 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-    name: name || `点 #${State.knownPoints.length + 1}`,
+    name: targetName,
     x: x,
     y: y,
     h: h,
@@ -5560,12 +5629,47 @@ function handleCsvImport() {
         importedCount++;
       });
 
-      if (importedCount === 0) {
+            if (importedCount === 0) {
         alert('有効な既知点データ（点名, X, Y, Z）が見つかりませんでした。\nフォーマットをご確認ください。');
         return;
       }
 
-      State.knownPoints = State.knownPoints.concat(newPoints);
+      // 重複チェック
+      const duplicates = [];
+      newPoints.forEach(np => {
+        const dupIdx = State.knownPoints.findIndex(kp => kp.name.trim().toUpperCase() === np.name.trim().toUpperCase());
+        if (dupIdx !== -1) {
+          duplicates.push({ newPt: np, existingIdx: dupIdx });
+        }
+      });
+
+      let shouldOverwrite = false;
+      if (duplicates.length > 0) {
+        const dupNames = duplicates.map(d => d.newPt.name).slice(0, 5).join(', ') + (duplicates.length > 5 ? ` ほか計${duplicates.length}件` : '');
+        const ok = confirm(`既存の既知点と重複する点名が ${duplicates.length} 件あります。\n(${dupNames})\n\n【OK】: 既存の点を上書き更新する\n【キャンセル】: 重複する点はスキップし、新規の点のみ追加する`);
+        shouldOverwrite = ok;
+      }
+
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      newPoints.forEach(np => {
+        const dupIdx = State.knownPoints.findIndex(kp => kp.name.trim().toUpperCase() === np.name.trim().toUpperCase());
+        if (dupIdx !== -1) {
+          if (shouldOverwrite) {
+            State.knownPoints[dupIdx] = {
+              ...State.knownPoints[dupIdx],
+              ...np,
+              id: State.knownPoints[dupIdx].id
+            };
+            updatedCount++;
+          }
+        } else {
+          State.knownPoints.push(np);
+          addedCount++;
+        }
+      });
+
       savePoints();
       renderKnownPoints();
       fileInput.value = '';
@@ -5573,7 +5677,10 @@ function handleCsvImport() {
       // 未設定の既知点があればバックグラウンドで取得開始
       startBackgroundGeoidFetch();
 
-      showToast(`${importedCount}件の既知点（縮尺・ジオイド判定済）をインポートしました`);
+      const resultMsg = updatedCount > 0
+        ? `${addedCount}件新規追加、${updatedCount}件上書き更新しました`
+        : `${addedCount}件の既知点をインポートしました`;
+      showToast(resultMsg);
       activateTab('tab-points');
     } catch (err) {
       console.error(err);
@@ -5587,7 +5694,7 @@ function handleCsvImport() {
 function generateCsvContent() {
   const isSur = State.isSurveyAxis;
   // フォーマット: 点名, X, Y, Z(標高), 縮尺係数, ジオイド高, 系
-  const header = isSur ? "点名,X(北),Y(東),Z(標高),縮尺係数,ジオイド高,系\r\n" : "点名,X(東),Y(北),Z(標高),縮尺係数,ジオイド高,系\r\n";
+  const header = isSur ? "点名,X(北),Y(東),Z(標高),縮尺係数,ジオイド高,系\n" : "点名,X(東),Y(北),Z(標高),縮尺係数,ジオイド高,系\n";
   let content = header;
   State.knownPoints.forEach((pt, i) => {
     const row = [
@@ -5599,7 +5706,7 @@ function generateCsvContent() {
       pt.geoid !== null && pt.geoid !== undefined ? pt.geoid : '',
       pt.zoneId || State.currentZoneId
     ].join(',');
-    content += row + "\r\n";
+    content += row + "\n";
   });
   return content;
 }
