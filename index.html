@@ -132,6 +132,13 @@
       transform: scale(0.95);
       background: #f1f5f9;
     }
+    .btn-icon-map.inactive {
+      opacity: 0.45;
+      background: #f8fafc;
+      filter: grayscale(80%);
+      box-shadow: none;
+      border: 1px dashed #cbd5e1;
+    }
 
     /* Bottom Controller & Panels */
     .bottom-wrapper {
@@ -834,7 +841,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.5 (2026/11/23 15:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.6 (2026/11/23 17:45)</span>
     </div>
   </div>
 
@@ -844,6 +851,8 @@
     <button class="btn-icon-map" id="btnZoomOut" title="縮小" style="font-size:22px; font-weight:bold;">−</button>
     <button class="btn-icon-map" id="btnRecenter" title="現在地に移動">🎯</button>
     <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
+    <button class="btn-icon-map" id="btnToggleKnownNames" title="既知点名 表示切替">🏷️</button>
+    <button class="btn-icon-map" id="btnToggleExpandedNames" title="展開・DXF文字 表示切替">🔤</button>
     <button class="btn-icon-map" id="btnToggleMeasure" title="距離計測">📏</button>
     <button class="btn-icon-map" id="btnToggleArea" title="面積計測">📐</button>
   </div>
@@ -1323,7 +1332,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.5.5 (2026/11/23 15:55)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.6 (2026/11/23 17:45)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1822,16 +1831,42 @@ function initUi() {
   document.getElementById('btnMoveToCurrent').addEventListener('click', moveToCurrentPosition);
   document.getElementById('btnMoveToKnown').addEventListener('click', moveToKnownPoints);
 
-  // 点名表示切替
+  // 点名表示切替 (既知点)
+  const btnToggleKnownNames = document.getElementById('btnToggleKnownNames');
   const chkNames = document.getElementById('chkShowPointNames');
+
+  function updateKnownNamesBtnState() {
+    if (!btnToggleKnownNames) return;
+    if (State.showPointNames) {
+      btnToggleKnownNames.classList.remove('inactive');
+      btnToggleKnownNames.title = '既知点名: 表示中 (タップで非表示)';
+    } else {
+      btnToggleKnownNames.classList.add('inactive');
+      btnToggleKnownNames.title = '既知点名: 非表示 (タップで表示)';
+    }
+  }
+
   if (chkNames) {
     chkNames.checked = State.showPointNames;
     chkNames.addEventListener('change', (e) => {
       State.showPointNames = e.target.checked;
       renderKnownPoints();
       saveSettings();
+      updateKnownNamesBtnState();
     });
   }
+
+  if (btnToggleKnownNames) {
+    btnToggleKnownNames.addEventListener('click', () => {
+      State.showPointNames = !State.showPointNames;
+      if (chkNames) chkNames.checked = State.showPointNames;
+      renderKnownPoints();
+      saveSettings();
+      updateKnownNamesBtnState();
+      showToast(State.showPointNames ? '🏷️ 既知点名: 表示' : '🏷️ 既知点名: 非表示');
+    });
+  }
+  updateKnownNamesBtnState();
 
   // GPSボタン
   document.getElementById('btnGps').addEventListener('click', toggleGps);
@@ -1891,6 +1926,52 @@ function initUi() {
     State.dxfWeight = parseInt(e.target.value, 10);
     renderDxfEntities();
   });
+  // 展開データ & DXF文字の表示切替ボタン
+  const btnToggleExpandedNames = document.getElementById('btnToggleExpandedNames');
+  function updateExpandedNamesBtnState() {
+    if (!btnToggleExpandedNames) return;
+    const isTsShown = map.hasLayer(tsTextGroup);
+    const isDxfShown = map.hasLayer(dxfTextGroup);
+    const isShown = isTsShown || isDxfShown;
+    if (isShown) {
+      btnToggleExpandedNames.classList.remove('inactive');
+      btnToggleExpandedNames.title = '展開・DXF文字: 表示中 (タップで非表示)';
+    } else {
+      btnToggleExpandedNames.classList.add('inactive');
+      btnToggleExpandedNames.title = '展開・DXF文字: 非表示 (タップで表示)';
+    }
+  }
+
+  if (btnToggleExpandedNames) {
+    btnToggleExpandedNames.addEventListener('click', () => {
+      const isTsShown = map.hasLayer(tsTextGroup);
+      const isDxfShown = map.hasLayer(dxfTextGroup);
+      const currentlyShown = isTsShown || isDxfShown;
+      const nextState = !currentlyShown;
+
+      // TS文字
+      if (nextState) {
+        if (!map.hasLayer(tsTextGroup)) map.addLayer(tsTextGroup);
+      } else {
+        if (map.hasLayer(tsTextGroup)) map.removeLayer(tsTextGroup);
+      }
+      const chkTs = document.getElementById('chkTsShowText');
+      if (chkTs) chkTs.checked = nextState;
+
+      // DXF文字
+      if (nextState) {
+        if (!map.hasLayer(dxfTextGroup)) map.addLayer(dxfTextGroup);
+      } else {
+        if (map.hasLayer(dxfTextGroup)) map.removeLayer(dxfTextGroup);
+      }
+      const chkDxf = document.getElementById('chkShowDxfText');
+      if (chkDxf) chkDxf.checked = nextState;
+
+      updateExpandedNamesBtnState();
+      showToast(nextState ? '🔤 展開・DXF文字: 表示' : '🔤 展開・DXF文字: 非表示');
+    });
+  }
+
   const chkShowDxfText = document.getElementById('chkShowDxfText');
   if (chkShowDxfText) {
     chkShowDxfText.addEventListener('change', (e) => {
@@ -1901,6 +1982,7 @@ function initUi() {
         if (map.hasLayer(dxfTextGroup)) map.removeLayer(dxfTextGroup);
         showToast('DXF文字を非表示');
       }
+      updateExpandedNamesBtnState();
     });
   }
 
@@ -2209,7 +2291,9 @@ function initUi() {
       if (map.hasLayer(tsTextGroup)) map.removeLayer(tsTextGroup);
       showToast('TS文字注記を非表示');
     }
+    updateExpandedNamesBtnState();
   });
+  updateExpandedNamesBtnState();
 
   // スナップ計測 & 逆打ち誘導ナビ UIイベント
   const btnToggleMeasure = document.getElementById('btnToggleMeasure');
