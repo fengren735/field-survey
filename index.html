@@ -525,7 +525,7 @@
       100% { transform: scale(1.6); opacity: 0; }
     }
 
-    /* Known point marker & label */
+    /* Known point marker & label (★マーク & 既知点バッジ) */
     .known-marker-wrap {
       position: relative;
       width: 0;
@@ -533,36 +533,41 @@
       pointer-events: auto;
       cursor: pointer;
     }
-    .known-marker-pin {
+    .known-marker-star {
       position: absolute;
-      top: -6px;
-      left: -6px;
-      width: 12px;
-      height: 12px;
-      background: #ef4444;
-      border: 2px solid white;
-      border-radius: 50%;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      top: -14px;
+      left: -14px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 2px 5px rgba(0,0,0,0.45));
       z-index: 10;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    .known-marker-star:hover {
+      transform: scale(1.18);
     }
     .known-marker-label {
       position: absolute;
-      bottom: 9px;
+      bottom: 16px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(255, 255, 255, 0.96);
       backdrop-filter: blur(2px);
       color: #0f172a;
-      font-size: 12.5px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 800;
       padding: 2px 8px;
       border-radius: 5px;
-      border: 1.5px solid #0284c7;
+      border: 1.8px solid #f59e0b;
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
       white-space: nowrap !important;
       line-height: 1.25;
       user-select: none;
-      z-index: 11;
+      z-index: 12;
       pointer-events: auto;
     }
     /* TS新規展開レイヤーの明滅（パルス点滅）アニメーション */
@@ -826,7 +831,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.4.0 (2026/11/23 00:50)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.4.1 (2026/11/23 11:25)</span>
     </div>
   </div>
 
@@ -1297,7 +1302,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.4.0 (2026/11/23 00:50)</b>
+              アプリVer: <b id="settingsVerLabel">v1.4.1 (2026/11/23 11:25)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2480,12 +2485,19 @@ function renderKnownPoints() {
 
     const pName = pt.name || `点 #${idx + 1}`;
 
-    // マーカー生成 (ピン中心が正確な座標位置、直上に点名ラベルを常時表示)
+    // マーカー生成 (★マーク中心が正確な座標位置、直上に点名ラベルを常時表示)
+    const starSvg = `
+      <svg viewBox="0 0 24 24" width="28" height="28" style="overflow:visible; display:block;">
+        <path d="M12 1.5l2.83 6.94 7.42.61-5.63 4.88 1.69 7.32L12 17.27l-6.31 4.08 1.69-7.32-5.63-4.88 7.42-.61L12 1.5z"
+              fill="#f59e0b" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+        <circle cx="12" cy="12" r="2.2" fill="#ffffff" />
+      </svg>
+    `;
     const ptIcon = L.divIcon({
       className: 'known-marker-div-icon',
       html: `
         <div class="known-marker-wrap">
-          <div class="known-marker-pin"></div>
+          <div class="known-marker-star">${starSvg}</div>
           ${showLabel ? `<div class="known-marker-label">${escapeHtml(pName)}</div>` : ''}
         </div>
       `,
@@ -3986,12 +3998,12 @@ function renderTsLayers(expandedData, showText = true) {
     });
   });
 
-  // 2. 単独点・標高点・赤丸エラー点
+  // 2. 単独点・標高点・赤丸エラー点 (半径6 / 直径12px: 既知点より控えめなサイズ)
   points.forEach(p => {
     if (p.isError) {
-      // 赤丸エラー点 (半径8、白フチ、明滅パルスアニメーション)
+      // 赤丸エラー点 (半径6、白フチ、明滅パルスアニメーション)
       const errMarker = L.circleMarker([p.lat, p.lng], {
-        radius: 8,
+        radius: 6,
         color: '#ffffff',
         weight: 2,
         fillColor: '#ef4444',
@@ -4033,9 +4045,9 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
     } else {
-      // 正常なシンボル・標高点 (ご指定通り 半径8、白フチ、明滅パルスアニメーション)
+      // 正常なシンボル・標高点 (半径6、白フチ、明滅パルスアニメーション)
       const marker = L.circleMarker([p.lat, p.lng], {
-        radius: 8,
+        radius: 6,
         color: '#ffffff',
         weight: 2,
         fillColor: p.color || '#0284c7',
