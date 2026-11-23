@@ -831,7 +831,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.4.2 (2026/11/23 12:05)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.5.1 (2026/11/23 12:35)</span>
     </div>
   </div>
 
@@ -1258,6 +1258,14 @@
               </div>
             </div>
 
+            <!-- エラーなし・称賛セクション -->
+            <div id="tsSuccessSection" style="display:none; margin-top:6px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:8px 10px;">
+              <div style="color:#15803d; font-size:11.5px; font-weight:700; display:flex; align-items:center; gap:6px;">
+                <span style="font-size:14px;">🎉</span>
+                <span>観測精度クリア！エラー・警告ゼロ（高精度観測お見事です✨）</span>
+              </div>
+            </div>
+
             <!-- 対回観測計算成果 (Icode=2122の時のみ表示) -->
             <div id="tsTaiKaiSection" style="display:none; margin-top:8px; background:#f0fdf4; border:1.5px solid #86efac; border-radius:6px; padding:8px 10px;">
               <div style="font-weight:700; color:#166534; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">
@@ -1302,7 +1310,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.4.2 (2026/11/23 12:05)</b>
+              アプリVer: <b id="settingsVerLabel">v1.5.1 (2026/11/23 12:35)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1927,8 +1935,17 @@ function initUi() {
             const useScale = document.getElementById('chkTsUseScale').checked;
 
             const o1kRes = await processT3DxO1k(o1kText, targetZoneId, { useGeoid, useScale });
+            
+            // 警告コメントおよび対回成果メッセージの保存 (CSV出力 & 画面表示用)
+            State.tsLastAlertMessages = o1kRes.alrtMsgList || [];
+            State.tsLastCovMessages = o1kRes.covMsgList || [];
+
             if (o1kRes.points.length === 0) {
-              alert('計算可能な観測点が見つかりませんでした。\n器械点・後視点名が登録既知点と一致しているかご確認ください。');
+              const alertDetails = (o1kRes.alrtMsgList && o1kRes.alrtMsgList.length > 0)
+                ? '\n\n【検出されたエラー・警告】\n' + o1kRes.alrtMsgList.join('\n')
+                : '\n器械点・後視点名が登録既知点と一致しているかご確認ください。';
+              alert('計算可能な観測点が見つかりませんでした。' + alertDetails);
+              showToast('⚠️ 計算可能な観測点が見つかりませんでした');
               btnExecTs.disabled = false;
               btnExecTs.textContent = '🚀 図上自動展開';
               return;
@@ -1975,20 +1992,27 @@ function initUi() {
             const allErrors = (o1kRes.logs.filter(l => l.level === 'danger' || l.level === 'warning')).concat(
               expanded.errors.map(e => ({ level: 'danger', msg: e.msg }))
             );
+            const successSec = document.getElementById('tsSuccessSection');
 
             if (allErrors.length > 0) {
               errSec.style.display = 'block';
+              if (successSec) successSec.style.display = 'none';
               errCountEl.textContent = allErrors.length;
               errListEl.innerHTML = allErrors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
             } else {
               errSec.style.display = 'none';
+              if (successSec) successSec.style.display = 'block';
             }
 
             document.getElementById('btnDownloadT3dCsv').disabled = false;
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
 
-            showToast(`T3DX展開完了: 結線${expanded.lines.length}本, 観測点${o1kRes.points.length}点`);
+            if (allErrors.length === 0) {
+              showToast('🎉 素晴らしい！観測データ完璧・エラーゼロ（高精度観測お見事です✨）');
+            } else {
+              showToast(`T3DX展開完了: 結線${expanded.lines.length}本, 観測点${o1kRes.points.length}点 (警告${allErrors.length}件)`);
+            }
             zoomToTsBounds();
           } catch (err) {
             console.error(err);
@@ -2058,19 +2082,22 @@ function initUi() {
               resCounts.textContent = `結線: ${expanded.lines.length}本 (点: ${csvPoints.length}個)`;
             }
 
+            const successSec = document.getElementById('tsSuccessSection');
             if (expanded.errors.length > 0) {
               errSec.style.display = 'block';
+              if (successSec) successSec.style.display = 'none';
               errCountEl.textContent = expanded.errors.length;
               errListEl.innerHTML = expanded.errors.map(e => `<div>${escapeHtml(e.msg)}</div>`).join('');
+              showToast(`T3DC展開完了: 結線${expanded.lines.length}本 (結線エラー${expanded.errors.length}件)`);
             } else {
               errSec.style.display = 'none';
+              if (successSec) successSec.style.display = 'block';
+              showToast('🎉 素晴らしい！結線エラーゼロ・完璧に展開されました✨');
             }
 
             document.getElementById('btnDownloadT3dCsv').disabled = false;
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
-
-            showToast(`T3DC展開完了: 結線${expanded.lines.length}本, 点${csvPoints.length}個`);
             zoomToTsBounds();
           } catch (err) {
             console.error(err);
@@ -3469,6 +3496,10 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
   let lstR2 = [];
   const taiKaiPoints = [];
 
+  // AutoLISP完全互換 警告・対回メッセージ蓄積
+  const alrtMsgList = [];
+  const covMsgList = [];
+
   const calculatedPoints = [];
   const logs = [];
   let lNum = 0;
@@ -3483,7 +3514,18 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
     // D行: 器械点
     if (recType === 'D') {
       currentInst = (data[1] || '').trim();
-      Ihe = parseFloat(data[3]) || 0;
+      
+      // 器械高チェック (LISP準拠)
+      const rawIhe = data[3] !== undefined ? data[3].trim() : '';
+      Ihe = parseFloat(rawIhe);
+      if (rawIhe === '' || isNaN(Ihe)) {
+        const msg = `危険度：★★★ 器械高 (4列目) が未入力または数値不正です [点名:${currentInst}, 行:${lineNum}]`;
+        logs.push({ level: 'danger', msg });
+        alrtMsgList.push(msg);
+        showToast(`⚠️ ${msg}`);
+        Ihe = 0;
+      }
+
       taiKaiIcode = (data[5] || '').trim();
       // 対回観測モード判定: Icodeの先頭4文字が "2122" の時のみ有効
       isTaiKaiMode = (taiKaiIcode.substring(0, 4) === '2122');
@@ -3494,7 +3536,10 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
 
       instPoint = findKnownPointByName(currentInst);
       if (!instPoint) {
-        logs.push({ level: 'danger', msg: `${lineNum}行目: 器械点「${currentInst}」が登録既知点に見つかりません。` });
+        const msg = `危険度：★★★ 存在しない既知点が器械点に選ばれました [点名:${currentInst}, 行:${lineNum}]`;
+        logs.push({ level: 'danger', msg });
+        alrtMsgList.push(msg);
+        showToast(`⚠️ ${msg}`);
         flgKikai = false;
         flgBack = false;
       } else {
@@ -3534,10 +3579,9 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
 
         // 2122以外の対回コードに対する注意喚起
         if (taiKaiIcode && !isTaiKaiMode && (taiKaiIcode.startsWith('19') || taiKaiIcode.startsWith('01') || taiKaiIcode.startsWith('10') || taiKaiIcode.startsWith('11') || taiKaiIcode.startsWith('12'))) {
-          logs.push({
-            level: 'warning',
-            msg: `${lineNum}行目: 対回観測パターン未対応 (コード:${taiKaiIcode.substring(0, 4)}、2122のみ対応)`
-          });
+          const msg = `危険度：★★★ 対回観測パターン未対応 パターンコード：${taiKaiIcode.substring(0, 4)} [行:${lineNum}]`;
+          logs.push({ level: 'warning', msg });
+          alrtMsgList.push(msg);
         }
       }
     }
@@ -3565,7 +3609,10 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
             bsPointName = pname;
             bsPoint = findKnownPointByName(bsPointName);
             if (!bsPoint) {
-              logs.push({ level: 'danger', msg: `${lineNum}行目: 対回後視点「${bsPointName}」が登録既知点に見つかりません。対回計算を中止します。` });
+              const msg = `危険度：★★★ 存在しない既知点が対回後視点に選ばれました [点名:${bsPointName}, 行:${lineNum}]`;
+              logs.push({ level: 'danger', msg });
+              alrtMsgList.push(msg);
+              showToast(`⚠️ ${msg}`);
               isTaiKaiMode = false;
               lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
               continue;
@@ -3593,6 +3640,9 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
             const bsA = Math.atan2(dy, dx);
             const bsADeg = radToDeg(bsA);
             const bsAzi = degToRad(Math.floor(bsADeg * 3600.0) / 3600.0);
+
+            covMsgList.push('▽▽▽   対回計算開始   ▽▽▽');
+            covMsgList.push('NAME,X,Y,Z');
 
             for (let curL = 1; curL < lstR1.length; curL++) {
               const pR1 = lstR1[curL];
@@ -3679,11 +3729,15 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
                 comment: `対回成果(器械点:${currentInst},後視点:${bsPointName})`
               });
 
+              covMsgList.push(`${pR1.pname},${roundX.toFixed(3)},${roundY.toFixed(3)},${roundZ.toFixed(3)}`);
+
               logs.push({
                 level: 'info',
                 msg: `🎯 対回成果算出: 点「${pR1.pname}」 X:${roundX.toFixed(3)}, Y:${roundY.toFixed(3)}, H:${roundZ.toFixed(3)}`
               });
             }
+
+            covMsgList.push('△△△   対回計算終了   △△△');
 
             // 対回バッファリセット
             lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
@@ -3699,7 +3753,10 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
           bsPointName = (data[1] || '').trim();
           bsPoint = findKnownPointByName(bsPointName);
           if (!bsPoint) {
-            logs.push({ level: 'danger', msg: `${lineNum}行目: 後視点「${bsPointName}」が登録既知点に見つかりません。` });
+            const msg = `危険度：★★★ 存在しない既知点が後視点に選ばれました [点名:${bsPointName}, 行:${lineNum}]`;
+            logs.push({ level: 'danger', msg });
+            alrtMsgList.push(msg);
+            showToast(`⚠️ ${msg}`);
             flgBack = false;
           } else {
             const rawBsAng = parseFloat(data[5]) || 0;
@@ -3717,28 +3774,55 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
             const th = parseFloat(data[3]) || 0;
             let vz = dmsToDeg(parseFloat(data[6]) || 0);
             if (vz > 180.0) vz = 180.0 - (vz - 180.0);
-            const rawSd = parseFloat(data[7]);
+            
+            const rawSdStr = (data[7] !== undefined && data[7] !== null) ? data[7].trim() : '';
 
-            if (typeof rawSd === 'number' && !isNaN(rawSd)) {
-              let hd = rawSd * Math.sin(degToRad(vz));
-              const ed = rawSd * Math.cos(degToRad(vz));
-              const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
-              const bsZ = bsPoint.z !== undefined ? bsPoint.z : (bsPoint.h || 0);
-              const oph = (instZ + Ihe + ed) - th;
+            if (rawSdStr === '') {
+              const msg = `危険度：★☆☆ 後視点距離が存在しません [点名:${bsPointName}, 行:${lineNum}]`;
+              logs.push({ level: 'warning', msg });
+              alrtMsgList.push(msg);
+            } else {
+              const rawSd = parseFloat(rawSdStr);
+              if (isNaN(rawSd)) {
+                const msg = `危険度：★★★ 後視点斜距離が数値不正です [点名:${bsPointName}, 行:${lineNum}]`;
+                logs.push({ level: 'danger', msg });
+                alrtMsgList.push(msg);
+              } else {
+                let hd = rawSd * Math.sin(degToRad(vz));
+                const ed = rawSd * Math.cos(degToRad(vz));
+                const instZ = instPoint.z !== undefined ? instPoint.z : (instPoint.h || 0);
+                const bsZ = bsPoint.z !== undefined ? bsPoint.z : (bsPoint.h || 0);
+                const oph = (instZ + Ihe + ed) - th;
 
-              // 投影補正・縮尺補正 (器械点の事前保持値を使用)
-              if (instGeoid !== null) {
-                hd = hd * (R / (R + oph + instGeoid));
-              }
-              if (instScale) hd = hd * instScale;
+                // 投影補正・縮尺補正 (器械点の事前保持値を使用)
+                if (instGeoid !== null) {
+                  hd = hd * (R / (R + oph + instGeoid));
+                }
+                if (instScale) hd = hd * instScale;
 
-              const distDiff = Math.abs(expectedDist - hd);
-              const elevDiff = Math.abs(oph - bsZ);
-              if (distDiff >= 0.03) {
-                logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との距離差 ${(distDiff * 100).toFixed(1)}cm` });
-              }
-              if (elevDiff >= 0.03) {
-                logs.push({ level: 'warning', msg: `${lineNum}行目: 後視点「${bsPointName}」との標高差 ${(elevDiff * 100).toFixed(1)}cm` });
+                const distDiff = Math.abs(expectedDist - hd);
+                const elevDiff = Math.abs(oph - bsZ);
+
+                // AutoLISP完全互換: 距離誤差判定 (1cm: ★☆☆, 3cm: ★★☆, 10cm: ★★★)
+                if (distDiff >= 0.01) {
+                  let hosi = '危険度：★☆☆';
+                  if (distDiff >= 0.10) hosi = '危険度：★★★';
+                  else if (distDiff >= 0.03) hosi = '危険度：★★☆';
+                  const msg = `${hosi} 後視点との距離に差異(cm) ${(distDiff * 100.0).toFixed(1)} [器械点:${currentInst}, 後視点:${bsPointName}, 行:${lineNum}]`;
+                  logs.push({ level: distDiff >= 0.03 ? 'danger' : 'warning', msg });
+                  alrtMsgList.push(msg);
+                  showToast(msg);
+                }
+
+                // AutoLISP完全互換: 標高誤差判定 (1cm: ★☆☆, 3cm: ★★☆, 10cm: ★★★)
+                if (elevDiff >= 0.01) {
+                  let hosi = '危険度：★☆☆';
+                  if (elevDiff >= 0.10) hosi = '危険度：★★★';
+                  else if (elevDiff >= 0.03) hosi = '危険度：★★☆';
+                  const msg = `${hosi} 後視点標高に差異(cm) ${(elevDiff * 100.0).toFixed(1)} [器械点:${currentInst}, 後視点:${bsPointName}, 行:${lineNum}]`;
+                  logs.push({ level: elevDiff >= 0.03 ? 'danger' : 'warning', msg });
+                  alrtMsgList.push(msg);
+                }
               }
             }
             flgBack = true;
@@ -3797,7 +3881,7 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
     }
   }
 
-  return { points: calculatedPoints, taiKaiPoints, logs };
+  return { points: calculatedPoints, taiKaiPoints, logs, alrtMsgList, covMsgList };
 }
 
 // --- T3D意味コード展開エンジン (結線ブレイク & 赤丸エラー描画対応) ---
@@ -4143,6 +4227,8 @@ function clearTsData() {
   State.tsSnapPoints = [];
   State.tsLastO1kResult = null;
   State.tsLastTaiKaiPoints = [];
+  State.tsLastAlertMessages = [];
+  State.tsLastCovMessages = [];
 
   const fileO1k = document.getElementById('tsO1kInput');
   const fileCsv = document.getElementById('tsCsvInput');
@@ -4151,6 +4237,8 @@ function clearTsData() {
 
   const resPanel = document.getElementById('tsResultPanel');
   if (resPanel) resPanel.style.display = 'none';
+  const successSec = document.getElementById('tsSuccessSection');
+  if (successSec) successSec.style.display = 'none';
   const taiKaiSec = document.getElementById('tsTaiKaiSection');
   if (taiKaiSec) taiKaiSec.style.display = 'none';
   document.getElementById('btnDownloadT3dCsv').disabled = true;
@@ -4160,17 +4248,37 @@ function clearTsData() {
   showToast('TS図面データを消去しました');
 }
 
-// 計算結果T3D CSVダウンロード
+// 計算結果T3D CSVダウンロード (AutoLISP完全互換 警告コメント & 対回成果ブロック出力対応)
 function downloadT3dCsv() {
   if (!State.tsLastO1kResult || State.tsLastO1kResult.length === 0) {
     showToast('出力可能な計算結果がありません');
     return;
   }
-  const rows = ['点番号,コード,X,Y,Z'];
+
+  const outputLines = [];
+
+  // 1. 対回計算成果メッセージ (AutoLISP covMsg 互換)
+  if (State.tsLastCovMessages && State.tsLastCovMessages.length > 0) {
+    outputLines.push(...State.tsLastCovMessages);
+    outputLines.push('');
+  }
+
+  // 2. 警告コメントブロック (AutoLISP alrtMsg 互換)
+  if (State.tsLastAlertMessages && State.tsLastAlertMessages.length > 0) {
+    outputLines.push('---------警告コメント---------');
+    outputLines.push(...State.tsLastAlertMessages);
+    outputLines.push('');
+    outputLines.push('---------警告コメント---------');
+    outputLines.push('');
+  }
+
+  // 3. 座標ヘッダー & データ行 (AutoLISP LINE,NAME,X,Y,Z 互換)
+  outputLines.push('LINE,NAME,X,Y,Z');
   State.tsLastO1kResult.forEach(p => {
-    rows.push(`${p.lineNum},${p.name},${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`);
+    outputLines.push(`${p.lineNum},${p.name},${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`);
   });
-  const csvContent = "\uFEFF" + rows.join('\r\n');
+
+  const csvContent = "\uFEFF" + outputLines.join('\r\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -4180,7 +4288,7 @@ function downloadT3dCsv() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('T3D CSVを出力しました');
+  showToast('警告コメント付き T3D CSVを出力しました');
 }
 // ==========================================
 // 8. オブジェクトスナップ (O-SNAP) エンジン
