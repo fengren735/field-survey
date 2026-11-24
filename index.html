@@ -887,7 +887,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.0 (2026/11/24 15:06)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.2 (2026/11/24 15:18)</span>
     </div>
   </div>
 
@@ -1409,7 +1409,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.7.0 (2026/11/24 15:06)</b>
+              アプリVer: <b id="settingsVerLabel">v1.7.2 (2026/11/24 15:18)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1428,7 +1428,7 @@
         <span style="font-size:22px;">⚠️</span>
         <div>
           <div class="modal-title" style="color:#b91c1c; font-weight:800; font-size:16px;">確認してください</div>
-          <div style="font-size:11px; color:#64748b;">観測データ展開中に精度差異または対回エラーが検出されました</div>
+          <div style="font-size:11px; color:#64748b;">観測データ展開中に結線エラー・精度差異・対回エラーが検出されました</div>
         </div>
       </div>
 
@@ -2397,11 +2397,21 @@ function initUi() {
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
 
-            // ★が一つでも含まれる警告、または対回エラーの検出 -> 「確認してください」モーダルダイアログ表示
+            // 結線エラー、★警告(精度差異など)、対回エラーの検出 -> 1件でもあれば「確認してください」モーダルダイアログ表示
+            const modalAlerts = [];
+            if (expanded && expanded.errors && expanded.errors.length > 0) {
+              expanded.errors.forEach(e => {
+                modalAlerts.push(`【結線エラー】 ${e.msg}`);
+              });
+            }
             const rawAlerts = (typeof o1kRes !== 'undefined' && o1kRes.alrtMsgList) ? o1kRes.alrtMsgList : (State.tsLastAlertMessages || []);
-            const starAlerts = rawAlerts.filter(msg => msg.includes('★') || msg.includes('対回'));
-            if (starAlerts.length > 0) {
-              openTsAlertModal(starAlerts);
+            rawAlerts.forEach(msg => {
+              if (msg.includes('★') || msg.includes('対回')) {
+                modalAlerts.push(msg);
+              }
+            });
+            if (modalAlerts.length > 0) {
+              openTsAlertModal(modalAlerts);
             }
           } catch (err) {
             console.error(err);
@@ -2499,11 +2509,21 @@ function initUi() {
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
 
-            // ★が一つでも含まれる警告、または対回エラーの検出 -> 「確認してください」モーダルダイアログ表示
+            // 結線エラー、★警告(精度差異など)、対回エラーの検出 -> 1件でもあれば「確認してください」モーダルダイアログ表示
+            const modalAlerts = [];
+            if (expanded && expanded.errors && expanded.errors.length > 0) {
+              expanded.errors.forEach(e => {
+                modalAlerts.push(`【結線エラー】 ${e.msg}`);
+              });
+            }
             const rawAlerts = (typeof o1kRes !== 'undefined' && o1kRes.alrtMsgList) ? o1kRes.alrtMsgList : (State.tsLastAlertMessages || []);
-            const starAlerts = rawAlerts.filter(msg => msg.includes('★') || msg.includes('対回'));
-            if (starAlerts.length > 0) {
-              openTsAlertModal(starAlerts);
+            rawAlerts.forEach(msg => {
+              if (msg.includes('★') || msg.includes('対回')) {
+                modalAlerts.push(msg);
+              }
+            });
+            if (modalAlerts.length > 0) {
+              openTsAlertModal(modalAlerts);
             }
           } catch (err) {
             console.error(err);
@@ -5980,7 +6000,8 @@ function openTsAlertModal(alertMessages) {
 
   listEl.innerHTML = alertMessages.map(msg => {
     let badge = '⚠️';
-    if (msg.includes('★★★')) badge = '🚨';
+    if (msg.includes('結線エラー')) badge = '❌';
+    else if (msg.includes('★★★')) badge = '🚨';
     else if (msg.includes('★★☆')) badge = '⚠️';
     else if (msg.includes('★☆☆')) badge = '⚡';
     return `<div style="background:#ffffff; border:1px solid #fca5a5; border-radius:5px; padding:6px 9px; word-break:break-all;">
