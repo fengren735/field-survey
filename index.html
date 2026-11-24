@@ -139,6 +139,27 @@
       box-shadow: none;
       border: 1px dashed #cbd5e1;
     }
+    @keyframes gps-pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7), var(--shadow-md);
+      }
+      70% {
+        box-shadow: 0 0 0 11px rgba(22, 163, 74, 0), var(--shadow-md);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, 0), var(--shadow-md);
+      }
+    }
+    @keyframes gps-dot-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.8); }
+    }
+    .btn-icon-map.gps-active {
+      background: #16a34a !important;
+      color: #ffffff !important;
+      border: 2px solid #bbf7d0 !important;
+      animation: gps-pulse-ring 1.8s infinite;
+    }
 
     /* Bottom Controller & Panels */
     .bottom-wrapper {
@@ -254,7 +275,7 @@
     }
     .sub-actions-grid {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
       margin-bottom: 4px;
     }
@@ -887,15 +908,13 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.2 (2026/11/24 15:18)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.3 (2026/11/24 16:08)</span>
     </div>
   </div>
 
   <!-- Quick Floating Controls (Top Left) -->
   <div class="top-controls">
-    <button class="btn-icon-map" id="btnZoomIn" title="拡大" style="font-size:22px; font-weight:bold;">＋</button>
-    <button class="btn-icon-map" id="btnZoomOut" title="縮小" style="font-size:22px; font-weight:bold;">−</button>
-    <button class="btn-icon-map" id="btnRecenter" title="現在地に移動">🎯</button>
+    <button class="btn-icon-map" id="btnRecenter" title="GPS測位開始 / 現在地に移動">🎯</button>
     <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
     <button class="btn-icon-map" id="btnToggleKnownNames" title="既知点名 表示切替">🏷️</button>
     <button class="btn-icon-map" id="btnToggleExpandedNames" title="展開・DXF文字 表示切替">🔤</button>
@@ -914,6 +933,10 @@
         <div class="summary-header">
           <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
             <span class="badge-label" id="dispZoneBadge">第IX系</span>
+            <span id="gpsLiveBadge" style="display:none; align-items:center; gap:4px; font-size:10px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:12px; padding:1px 7px; white-space:nowrap;">
+              <span style="width:6px; height:6px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span>
+              測位中
+            </span>
             <span class="coord-val" id="dispLatLng" style="font-size:11px;">測位待機中...</span>
           </div>
           <span style="font-size:10px; color:var(--primary); font-weight:700; white-space:nowrap;" id="btnToggleSheet">詳細 ▾</span>
@@ -958,9 +981,6 @@
 
         <!-- Management & Tracking Actions -->
         <div class="sub-actions-grid">
-          <button class="btn btn-secondary" id="btnGps">
-            <span id="gpsIcon">🛰️</span> <span id="gpsText">GPS測位開始</span>
-          </button>
           <button class="btn btn-secondary" id="btnAddKnownModal">
             ＋ 点追加
           </button>
@@ -1409,7 +1429,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.7.2 (2026/11/24 15:18)</b>
+              アプリVer: <b id="settingsVerLabel">v1.7.3 (2026/11/24 16:08)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2048,14 +2068,20 @@ function initUi() {
     const cleanUrl = window.location.href.split('?')[0];
     window.location.href = cleanUrl + '?v=' + Date.now();
   });
-  document.getElementById('btnZoomIn').addEventListener('click', () => {
-    map.zoomIn();
-    showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
-  });
-  document.getElementById('btnZoomOut').addEventListener('click', () => {
-    map.zoomOut();
-    showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
-  });
+  const elZoomIn = document.getElementById('btnZoomIn');
+  if (elZoomIn) {
+    elZoomIn.addEventListener('click', () => {
+      map.zoomIn();
+      showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
+    });
+  }
+  const elZoomOut = document.getElementById('btnZoomOut');
+  if (elZoomOut) {
+    elZoomOut.addEventListener('click', () => {
+      map.zoomOut();
+      showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
+    });
+  }
 
   // 移動ボタン
   document.getElementById('btnMoveToCurrent').addEventListener('click', moveToCurrentPosition);
@@ -2098,9 +2124,11 @@ function initUi() {
   }
   updateKnownNamesBtnState();
 
-  // GPSボタン
-  document.getElementById('btnGps').addEventListener('click', toggleGps);
-  document.getElementById('btnRecenter').addEventListener('click', moveToCurrentPosition);
+  // GPS・移動ボタン
+  const elBtnGps = document.getElementById('btnGps');
+  if (elBtnGps) elBtnGps.addEventListener('click', toggleGps);
+  const elBtnRecenter = document.getElementById('btnRecenter');
+  if (elBtnRecenter) elBtnRecenter.addEventListener('click', onRecenterBtnClick);
 
   // 既知点モーダル
   document.getElementById('btnAddKnownModal').addEventListener('click', () => openKnownModal());
@@ -2736,15 +2764,28 @@ function updateAxisLabels() {
 
 // --- 6. GPS位置測位 ---
 function toggleGps() {
+  const elBtnGps = document.getElementById('btnGps');
+  const elGpsIcon = document.getElementById('gpsIcon');
+  const elGpsText = document.getElementById('gpsText');
+  const elRecenter = document.getElementById('btnRecenter');
+  const elLiveBadge = document.getElementById('gpsLiveBadge');
+  const elLatLng = document.getElementById('dispLatLng');
+
   if (State.isWatchingGps) {
     // 停止
     if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
     State.isWatchingGps = false;
     State.watchId = null;
     State.isGsiElevLoading = false;
-    document.getElementById('gpsIcon').textContent = '📍';
-    document.getElementById('gpsText').textContent = 'GPS測位開始';
-    document.getElementById('btnGps').classList.remove('active');
+    if (elGpsIcon) elGpsIcon.textContent = '📍';
+    if (elGpsText) elGpsText.textContent = 'GPS測位開始';
+    if (elBtnGps) elBtnGps.classList.remove('active');
+    if (elRecenter) {
+      elRecenter.classList.remove('gps-active');
+      elRecenter.title = 'GPS測位開始 / 現在地に移動';
+    }
+    if (elLiveBadge) elLiveBadge.style.display = 'none';
+    if (elLatLng && !State.currentPosition) elLatLng.textContent = '測位待機中...';
     showToast('GPS測位を停止しました');
   } else {
     // 開始
@@ -2752,9 +2793,14 @@ function toggleGps() {
       alert('お使いの端末・ブラウザはGeolocationに対応していません。');
       return;
     }
-    showToast('現在地を取得中...');
-    document.getElementById('gpsText').textContent = '測位中 (追従ON)';
-    document.getElementById('btnGps').classList.add('active');
+    showToast('🛰️ GPS測位を開始中...');
+    if (elGpsText) elGpsText.textContent = '測位中 (追従ON)';
+    if (elBtnGps) elBtnGps.classList.add('active');
+    if (elRecenter) {
+      elRecenter.classList.add('gps-active');
+      elRecenter.title = '測位中 (タップで中心移動 / 再タップで停止)';
+    }
+    if (elLiveBadge) elLiveBadge.style.display = 'inline-flex';
     State.isWatchingGps = true;
     State.isGsiElevLoading = true;
     const elHGsi = document.getElementById('dispHGsi');
@@ -2769,6 +2815,32 @@ function toggleGps() {
       onGpsError,
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
+  }
+}
+
+// マップ上の🎯ボタン（測位開始・現在地移動・停止）
+function onRecenterBtnClick() {
+  if (!State.isWatchingGps) {
+    // 測位停止中なら測位開始
+    toggleGps();
+    if (State.currentPosition) {
+      map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
+    }
+  } else {
+    // 測位中の場合
+    if (State.currentPosition) {
+      const center = map.getCenter();
+      const dist = map.distance(center, [State.currentPosition.lat, State.currentPosition.lng]);
+      // すでに画面中心に現在地がある状態で再度押されたら測位を停止
+      if (dist < 10) {
+        toggleGps();
+      } else {
+        map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
+        showToast('現在地に移動しました');
+      }
+    } else {
+      showToast('現在地を取得中...');
+    }
   }
 }
 
@@ -2887,7 +2959,13 @@ function updateCoordinateDisplays() {
 
   // 緯度経度 + 精度
   const accText = typeof p.accuracy === 'number' ? ` (±${Math.round(p.accuracy)}m)` : '';
-  document.getElementById('dispLatLng').textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}°${accText}`;
+  const elLatLng = document.getElementById('dispLatLng');
+  if (elLatLng) elLatLng.textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}°${accText}`;
+  const elLiveBadge = document.getElementById('gpsLiveBadge');
+  if (elLiveBadge && State.isWatchingGps) {
+    elLiveBadge.style.display = 'inline-flex';
+    elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span> 測位中${accText}`;
+  }
 
   // 平面直角座標 X / Y (1,000刻みカンマフォーマット)
   const dispX = isSur ? p.surveyX : p.mathX;
