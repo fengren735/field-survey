@@ -827,6 +827,18 @@
       left: 50%;
       transform: translateX(-50%); /* 水平中央揃え */
     }
+
+    /* 視準矢印専用ラッパー (完全中央センタリング保証) */
+    .ts-sight-arrow-wrap {
+      background: transparent !important;
+      border: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      pointer-events: none !important;
+      overflow: visible !important;
+    }
   </style>
 </head>
 <body>
@@ -873,7 +885,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.3 (2026/11/24 11:10)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.4 (2026/11/24 11:15)</span>
     </div>
   </div>
 
@@ -1395,7 +1407,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.3 (2026/11/24 11:10)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.4 (2026/11/24 11:15)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -4809,18 +4821,18 @@ function renderTsLayers(expandedData, showText = true) {
           const dLng = (bsLL.lng - instLL.lng) * Math.cos((instLL.lat + bsLL.lat) * Math.PI / 360);
           const angleDeg = (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
 
-          // 後視点に向かう視準矢印 (線上の約65%地点に後視点を指す矢印を配置)
-          const arrowLat = instLL.lat + (bsLL.lat - instLL.lat) * 0.65;
-          const arrowLng = instLL.lng + (bsLL.lng - instLL.lng) * 0.65;
+          // 後視点に向かう視準矢印 (線上の約60%地点に後視点を指す矢印を配置・完全センタリング)
+          const arrowLat = instLL.lat + (bsLL.lat - instLL.lat) * 0.60;
+          const arrowLng = instLL.lng + (bsLL.lng - instLL.lng) * 0.60;
           const arrowIcon = L.divIcon({
-            className: 'ts-station-label-wrap',
-            html: `<div style="transform: rotate(${angleDeg}deg); transform-origin: center center; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;">
-              <svg width="26" height="26" viewBox="0 0 24 24" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55));">
-                <path d="M12 2 L21 19 L12 15 L3 19 Z" fill="${sess.color}" stroke="#ffffff" stroke-width="1.8"/>
+            className: 'ts-sight-arrow-wrap',
+            html: `<div style="position: absolute; top: 0; left: 0; width: 24px; height: 24px; margin-left: -12px; margin-top: -12px; transform: rotate(${angleDeg}deg); transform-origin: 12px 12px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+              <svg width="24" height="24" viewBox="0 0 24 24" style="filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));">
+                <path d="M12 2 L20 18 L12 14 L4 18 Z" fill="${sess.color}" stroke="#ffffff" stroke-width="1.8"/>
               </svg>
             </div>`,
-            iconSize: [26, 26],
-            iconAnchor: [13, 13]
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
           });
           tsLayerGroup.addLayer(L.marker([arrowLat, arrowLng], { icon: arrowIcon, pane: 'tsPane', interactive: false }));
 
