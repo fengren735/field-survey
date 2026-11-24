@@ -842,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.2 (2026/11/24 10:01)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.3 (2026/11/24 10:20)</span>
     </div>
   </div>
 
@@ -1289,6 +1289,27 @@
               </div>
             </div>
 
+            <!-- 観測セット(塊)別 表示・非表示切替セクション -->
+            <div id="tsSessionsSection" style="display:none; margin-top:8px; background:#f0f9ff; border:1.5px solid #bae6fd; border-radius:8px; padding:8px 10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <b style="font-size:11.5px; color:#0369a1; display:flex; align-items:center; gap:4px;">
+                  <span>🔭 観測セット(器械点・後視点の塊)</span>
+                  <span id="tsSessionsCount" style="font-size:10px; background:#e0f2fe; padding:1px 5px; border-radius:3px; color:#0284c7; font-weight:bold;">0 セット</span>
+                </b>
+                <div style="display:flex; gap:4px;">
+                  <button type="button" id="btnTsShowAllSessions" style="background:#ffffff; border:1px solid #7dd3fc; border-radius:4px; font-size:10px; font-weight:bold; color:#0284c7; padding:2px 6px; cursor:pointer;">全表示</button>
+                  <button type="button" id="btnTsHideAllSessions" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; font-weight:bold; color:#64748b; padding:2px 6px; cursor:pointer;">全非表示</button>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; padding-bottom:4px; border-bottom:1px dashed #bae6fd; font-size:10.5px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:#0369a1; font-weight:600;">
+                  <input type="checkbox" id="chkShowTsStations" checked> 📡 器械点・後視点マーカーを地図に表示
+                </label>
+              </div>
+              <div id="tsSessionsList" style="display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;">
+              </div>
+            </div>
+
             <!-- 結線個別フォーカスリスト (極小線でもワンタップで超拡大) -->
             <div id="tsLinesSection" style="display:none; margin-top:8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
               <div style="font-size:11px; font-weight:bold; color:#334155; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
@@ -1343,7 +1364,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.2 (2026/11/24 10:01)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.3 (2026/11/24 10:20)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1481,10 +1502,35 @@ const State = {
   tsLines: [], // 展開線群 [{ layer, color, weight, dashArray, isClosed, points }]
   tsSnapPoints: [], // TS展開図形のスナップ点キャッシュ
   tsLastO1kResult: null, // O1K計算結果 (CSVダウンロード用)
-  tsShowText: true // 点名・注記テキストを表示するか
+  tsShowText: true, // 点名・注記テキストを表示するか
+  tsSessions: [], // 観測セット(塊)一覧 [{ id, instName, bsName, color, visible, pointCount, lineCount, instPoint, bsPoint }]
+  tsExpandedData: null, // 現在展開中の完全データ保持 (表示/非表示フィルタ用)
+  tsShowStations: true // 器械点・後視点マーカーを地図に表示するか
 };
 
+// 観測セット(塊)の識別カラーパレット
+const TS_SESSION_COLORS = [
+  '#0284c7', // 青
+  '#ea580c', // オレンジ
+  '#16a34a', // 緑
+  '#9333ea', // 紫
+  '#db2777', // ピンク
+  '#0891b2', // シアン
+  '#ca8a04', // アンバー
+  '#4f46e5'  // インディゴ
+];
+
 // --- 3. ユーティリティ関数 ---
+// 観測点名の正規化: 2桁目が 'Z'/'z' の場合、3桁目以降を点名とする
+function cleanPointName(rawName) {
+  if (!rawName) return '';
+  const str = String(rawName).trim();
+  if (str.length >= 3 && (str.charAt(1) === 'Z' || str.charAt(1) === 'z')) {
+    return str.substring(2);
+  }
+  return str;
+}
+
 // ファイルの文字コード自動判別 (Shift-JIS / UTF-8 両対応)
 function decodeTextAuto(arrayBuffer) {
   try {
@@ -2137,8 +2183,12 @@ function initUi() {
             }
 
             State.tsLastO1kResult = o1kRes.points;
+            State.tsSessions = o1kRes.sessions || [];
             const expanded = expandT3DCode(o1kRes.points, targetZoneId, { showText });
             renderTsLayers(expanded, showText);
+
+            // 観測セット(塊)一覧の表示更新
+            updateTsSessionsList(State.tsSessions);
 
             // 結果サマリー更新
             const resPanel = document.getElementById('tsResultPanel');
@@ -2261,10 +2311,12 @@ function initUi() {
 
               csvPoints.push({
                 lineNum: isNaN(testNum) ? (i + 1) : testNum,
-                name: row[1] || '',
+                name: cleanPointName(row[1] || ''),
+                rawCode: row[1] || '',
                 x: testX,
                 y: testY,
-                z: parseFloat(row[4]) || 0
+                z: parseFloat(row[4]) || 0,
+                sessionId: 1
               });
             }
 
@@ -2276,8 +2328,10 @@ function initUi() {
             }
 
             State.tsLastO1kResult = csvPoints;
+            State.tsSessions = [{ id: 1, instName: 'T3D CSV観測点', bsName: '', color: TS_SESSION_COLORS[0], pointCount: csvPoints.length, visible: true }];
             const expanded = expandT3DCode(csvPoints, targetZoneId, { showText });
             renderTsLayers(expanded, showText);
+            updateTsSessionsList(State.tsSessions);
 
             const resPanel = document.getElementById('tsResultPanel');
             const resCounts = document.getElementById('tsResultCounts');
@@ -2330,6 +2384,38 @@ function initUi() {
   document.getElementById('btnDownloadT3dCsv').addEventListener('click', downloadT3dCsv);
   document.getElementById('btnZoomToTs').addEventListener('click', zoomToTsBounds);
   document.getElementById('btnClearTs').addEventListener('click', clearTsData);
+
+  // 観測セット(塊)操作ボタン
+  const btnShowAllSess = document.getElementById('btnTsShowAllSessions');
+  if (btnShowAllSess) {
+    btnShowAllSess.addEventListener('click', () => {
+      (State.tsSessions || []).forEach(s => s.visible = true);
+      const showText = document.getElementById('chkTsShowText') ? document.getElementById('chkTsShowText').checked : true;
+      renderTsLayers(State.tsExpandedData, showText);
+      updateTsSessionsList(State.tsSessions);
+      showToast('すべての観測セットを表示しました');
+    });
+  }
+
+  const btnHideAllSess = document.getElementById('btnTsHideAllSessions');
+  if (btnHideAllSess) {
+    btnHideAllSess.addEventListener('click', () => {
+      (State.tsSessions || []).forEach(s => s.visible = false);
+      const showText = document.getElementById('chkTsShowText') ? document.getElementById('chkTsShowText').checked : true;
+      renderTsLayers(State.tsExpandedData, showText);
+      updateTsSessionsList(State.tsSessions);
+      showToast('すべての観測セットを非表示にしました');
+    });
+  }
+
+  const chkShowStations = document.getElementById('chkShowTsStations');
+  if (chkShowStations) {
+    chkShowStations.addEventListener('change', (e) => {
+      State.tsShowStations = e.target.checked;
+      const showText = document.getElementById('chkTsShowText') ? document.getElementById('chkTsShowText').checked : true;
+      renderTsLayers(State.tsExpandedData, showText);
+    });
+  }
 
   // 対回観測成果 既知点一括登録ボタン
   const btnRegTaiKai = document.getElementById('btnRegisterTaiKai');
@@ -3769,6 +3855,11 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
   let instScale = 1.0;
   let instGeoid = null;
 
+  // 観測セット(塊: セッション)管理
+  let currentSessionId = 0;
+  const sessions = []; // [{ id, instName, bsName, instPoint, bsPoint, color, pointCount, visible }]
+  let currentSession = null;
+
   // 対回観測用状態 (Icodeが2122の時のみ動作)
   let isTaiKaiMode = false;
   let taiKaiIcode = '';
@@ -3793,9 +3884,23 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
     const lineNum = lineIdx + 1;
     const recType = line.charAt(0);
 
-    // D行: 器械点
+    // D行: 器械点 (新しい観測セット・塊の開始)
     if (recType === 'D') {
       currentInst = (data[1] || '').trim();
+      currentSessionId++;
+
+      const sColor = TS_SESSION_COLORS[(currentSessionId - 1) % TS_SESSION_COLORS.length];
+      currentSession = {
+        id: currentSessionId,
+        instName: currentInst,
+        bsName: '',
+        instPoint: null,
+        bsPoint: null,
+        color: sColor,
+        pointCount: 0,
+        visible: true
+      };
+      sessions.push(currentSession);
       
       // 器械高チェック (LISP準拠)
       const rawIhe = data[3] !== undefined ? data[3].trim() : '';
@@ -3827,6 +3932,9 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
       } else {
         flgKikai = true;
         flgBack = false;
+        if (currentSession) {
+          currentSession.instPoint = instPoint;
+        }
 
         // 器械点固有の縮尺係数・ジオイド高の即時解決 (通信待ちゼロ・爆速同期計算)
         if (options.useScale) {
@@ -3856,7 +3964,7 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
         const modeBadge = isTaiKaiMode ? '【対回観測(2122)】' : (taiKaiIcode ? `【条件コード:${taiKaiIcode}】` : '');
         logs.push({
           level: 'info',
-          msg: `${lineNum}行目: 器械点「${currentInst}」セット ${modeBadge} (X:${instPoint.x.toFixed(3)}, Y:${instPoint.y.toFixed(3)}, H:${(instPoint.z || instPoint.h || 0).toFixed(3)}${instScale ? ', 縮尺:' + instScale.toFixed(6) : ''}${instGeoid !== null ? ', ジオイド:' + instGeoid.toFixed(3) + 'm' : ''})`
+          msg: `${lineNum}行目: 器械点「${currentInst}」セット(塊#${currentSessionId}) ${modeBadge} (X:${instPoint.x.toFixed(3)}, Y:${instPoint.y.toFixed(3)}, H:${(instPoint.z || instPoint.h || 0).toFixed(3)}${instScale ? ', 縮尺:' + instScale.toFixed(6) : ''}${instGeoid !== null ? ', ジオイド:' + instGeoid.toFixed(3) + 'm' : ''})`
         });
 
         // 2122以外の対回コードに対する注意喚起
@@ -3992,23 +4100,35 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
               const roundZ = Math.round(oph * 1000) / 1000;
 
               lNum++;
+              if (currentSession) {
+                currentSession.bsName = bsPointName;
+                currentSession.bsPoint = bsPoint;
+                currentSession.pointCount++;
+              }
+
               calculatedPoints.push({
                 lineNum: lNum,
                 sourceLine: pR1.lineNum,
-                name: pR1.pname,
+                name: cleanPointName(pR1.pname),
+                rawCode: pR1.pname,
+                rawName: pR1.pname,
                 x: roundX,
                 y: roundY,
-                z: roundZ
+                z: roundZ,
+                sessionId: currentSessionId,
+                instName: currentInst,
+                bsName: bsPointName
               });
 
               taiKaiPoints.push({
-                name: pR1.pname,
+                name: cleanPointName(pR1.pname),
+                rawCode: pR1.pname,
                 x: roundX,
                 y: roundY,
                 z: roundZ,
                 scale: instScale,
                 geoid: instGeoid,
-                comment: `対回成果(器械点:${currentInst},後視点:${bsPointName})`
+                comment: `対回成果(セット#${currentSessionId},器械点:${currentInst},後視点:${bsPointName})`
               });
 
               covMsgList.push(`${pR1.pname},${roundX.toFixed(3)},${roundY.toFixed(3)},${roundZ.toFixed(3)}`);
@@ -4108,7 +4228,11 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
               }
             }
             flgBack = true;
-            logs.push({ level: 'info', msg: `${lineNum}行目: 後視点「${bsPointName}」照準完了` });
+            if (currentSession) {
+              currentSession.bsName = bsPointName;
+              currentSession.bsPoint = bsPoint;
+            }
+            logs.push({ level: 'info', msg: `${lineNum}行目: 後視点「${bsPointName}」照準完了 (セット#${currentSessionId}: 器械点「${currentInst}」)` });
           }
         }
         // 放射観測新点
@@ -4150,20 +4274,28 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
           const opy = instPoint.y + hd * Math.sin(azi);
 
           lNum++;
+          if (currentSession) {
+            currentSession.pointCount++;
+          }
           calculatedPoints.push({
             lineNum: lNum,
             sourceLine: lineNum,
-            name: pname,
+            name: cleanPointName(pname),
+            rawCode: pname,
+            rawName: pname,
             x: Math.round(opx * 1000) / 1000,
             y: Math.round(opy * 1000) / 1000,
-            z: Math.round(oph * 1000) / 1000
+            z: Math.round(oph * 1000) / 1000,
+            sessionId: currentSessionId,
+            instName: currentInst,
+            bsName: bsPointName
           });
         }
       }
     }
   }
 
-  return { points: calculatedPoints, taiKaiPoints, logs, alrtMsgList, covMsgList };
+  return { points: calculatedPoints, taiKaiPoints, logs, alrtMsgList, covMsgList, sessions };
 }
 
 // --- T3D意味コード展開エンジン (結線ブレイク & 赤丸エラー描画対応) ---
@@ -4173,6 +4305,7 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
   let currentLayerInfo = null;
   let preKessen = null;
   let preSensyu = null;
+  let preSessionId = null;
 
   const linesResult = [];
   const pointsResult = [];
@@ -4180,12 +4313,16 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
 
   function commitLine(isClosed) {
     if (currentLinePts.length >= 2) {
+      const firstPt = currentLinePts[0];
       linesResult.push({
         layer: currentLayerInfo ? currentLayerInfo.name : '遺構線',
         color: currentLayerInfo ? currentLayerInfo.color : '#0284c7',
         weight: currentLayerInfo ? currentLayerInfo.weight : 2.5,
         dashArray: currentLayerInfo ? currentLayerInfo.dashArray : null,
         isClosed: isClosed,
+        sessionId: firstPt.sessionId || 1,
+        instName: firstPt.instName || '',
+        bsName: firstPt.bsName || '',
         points: [...currentLinePts]
       });
     }
@@ -4196,8 +4333,17 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
 
   for (let i = 0; i < t3dPoints.length; i++) {
     const p = t3dPoints[i];
-    const codeStr = (p.name || '').trim();
+    // 生のコードまたは点名 (2桁目がZなら3桁目以降が実体点名)
+    const codeStr = (p.rawCode || p.name || '').trim();
     const lineNo = p.lineNum || (i + 1);
+
+    // 観測セット(塊)が切り替わったら前の結線をブレイク
+    if (preSessionId !== null && p.sessionId && preSessionId !== p.sessionId && currentLinePts.length > 0) {
+      commitLine(false);
+      preKessen = null;
+      preSensyu = null;
+    }
+    preSessionId = p.sessionId || 1;
 
     // 測量系(X:北, Y:東)で緯度経度へ変換
     const ll = xyToLatLng(p.x, p.y, targetZoneId, true);
@@ -4213,7 +4359,10 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
       z: p.z,
       lat: ll.lat,
       lng: ll.lng,
-      rawCode: codeStr
+      rawCode: codeStr,
+      sessionId: p.sessionId || 1,
+      instName: p.instName || '',
+      bsName: p.bsName || ''
     };
 
     const SENSYU = codeStr.length >= 1 ? codeStr.charAt(0) : '';
@@ -4221,7 +4370,8 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
     const NAIYOU = codeStr.length >= 3 ? codeStr.substring(2) : '';
 
     const isLineCode = /^[A-Za-z]$/.test(SENSYU) && (KESSEN === 'A' || KESSEN === 'B' || KESSEN === 'C');
-    const isSymbolCode = /^[0-9@#\$\-Zz]$/.test(SENSYU) && (KESSEN === 'Z' || KESSEN === 'z');
+    // 2桁目が 'Z' または 'z' の場合はすべて単独点・シンボル(3桁目以降が点名)として認識
+    const isSymbolCode = (KESSEN === 'Z' || KESSEN === 'z');
 
     // エラーケース1: コード体系外
     if (!isLineCode && !isSymbolCode) {
@@ -4234,7 +4384,7 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
         ...ptObj,
         isError: true,
         errorMsg: 'コード体系外',
-        name: codeStr || `点${lineNo}`,
+        name: cleanPointName(codeStr) || `点${lineNo}`,
         color: '#ef4444'
       });
       preKessen = null;
@@ -4260,7 +4410,7 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
           ...ptObj,
           isError: true,
           errorMsg: '結線開始コード(A)欠落',
-          name: codeStr,
+          name: cleanPointName(codeStr) || codeStr,
           color: '#ef4444'
         });
         preKessen = null;
@@ -4288,17 +4438,19 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
       // 結線途中に単独点が割り込んだ -> ブレイク
       if (preKessen === 'A' && currentLinePts.length > 0) {
         commitLine(false);
-        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 結線途中にシンボル「${codeStr}」が割り込んだため結線をブレイクしました` });
+        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 結線途中に単独点「${codeStr}」が割り込んだため結線をブレイクしました` });
       }
 
-      const symDef = T3D_LAYER_DEFS[upSensyu] || { name: `シンボル_${upSensyu}`, color: '#0284c7' };
+      const symDef = T3D_LAYER_DEFS[upSensyu] || { name: `単独点_${upSensyu}`, color: '#0284c7' };
+      // 2桁目がZの場合は3桁目以降が点名
+      const pointDisplayName = NAIYOU || cleanPointName(codeStr) || symDef.name;
       pointsResult.push({
         ...ptObj,
         isError: false,
-        name: NAIYOU || symDef.name,
+        name: pointDisplayName,
         sensyu: upSensyu,
         layer: symDef.name,
-        color: symDef.color,
+        color: symDef.color || '#0284c7',
         isElevation: (upSensyu === '0' || upSensyu === '-')
       });
 
@@ -4318,6 +4470,9 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
 
 // --- TS展開レイヤーの地図描画 & スナップ登録 ---
 function renderTsLayers(expandedData, showText = true) {
+  if (!expandedData) return;
+  State.tsExpandedData = expandedData;
+
   tsLayerGroup.clearLayers();
   tsTextGroup.clearLayers();
   State.tsSnapPoints = [];
@@ -4325,12 +4480,21 @@ function renderTsLayers(expandedData, showText = true) {
   const { lines, points } = expandedData;
   State.tsLines = lines || [];
 
-  // 1. 結線 (ポリライン・ポリゴン) - 最前面tsPane & 白フチ二重描画で確実に視認可能に
+  // セッション(塊)の可視性マップ (sessionId -> boolean)
+  const sessionVisMap = {};
+  (State.tsSessions || []).forEach(s => {
+    sessionVisMap[s.id] = (s.visible !== false);
+  });
+
+  // 1. 結線 (ポリライン・ポリゴン) - 最前面tsPane & 白フチ二重描画
   lines.forEach((l, idx) => {
+    // 該当セット(塊)が非表示なら描画スキップ
+    if (l.sessionId && sessionVisMap[l.sessionId] === false) return;
+
     const latlngs = l.points.map(p => [p.lat, p.lng]);
     const baseWeight = Math.max(l.weight || 3.5, 3.5);
 
-    // 1-A. 白フチ (外枠ライン: どんな背景・DXF太線の上でもコントラストを保ち浮き上がらせる)
+    // 1-A. 白フチ (外枠ライン)
     const haloOpts = {
       pane: 'tsPane',
       color: '#ffffff',
@@ -4361,9 +4525,14 @@ function renderTsLayers(expandedData, showText = true) {
       ? L.polygon(latlngs, { ...polyOpts, fill: true, fillColor: l.color, fillOpacity: 0.12 })
       : L.polyline(latlngs, polyOpts);
 
+    const sessionInfoStr = l.instName
+      ? `<span style="font-size:10px; color:#0284c7; background:#e0f2fe; padding:1px 5px; border-radius:3px; font-weight:bold;">セット#${l.sessionId}: ${escapeHtml(l.instName)}${l.bsName ? '→' + escapeHtml(l.bsName) : ''}</span><br>`
+      : '';
+
     poly.bindPopup(`
-      <div style="font-size:12px; min-width:140px;">
+      <div style="font-size:12px; min-width:150px;">
         <b style="color:${l.color}; font-size:13px;">${escapeHtml(l.layer)}</b><br>
+        ${sessionInfoStr}
         <div style="margin:4px 0; color:#334155; font-size:11px;">
           頂点数: <b>${l.points.length}</b> 点<br>
           始点: ${escapeHtml(l.points[0].rawCode || '始点')}<br>
@@ -4376,7 +4545,7 @@ function renderTsLayers(expandedData, showText = true) {
     `);
     tsLayerGroup.addLayer(poly);
 
-    // 1-C. 結線の端点ノード (始点・終点) - 70cm等の微小線でも両端が確実に視認できるようにマーク
+    // 1-C. 結線の端点ノード (始点・終点)
     l.points.forEach((p, vIdx) => {
       const isStart = (vIdx === 0);
       const isEnd = (vIdx === l.points.length - 1);
@@ -4393,6 +4562,7 @@ function renderTsLayers(expandedData, showText = true) {
         nodeMarker.bindPopup(`
           <div style="font-size:12px;">
             <b style="color:${l.color};">${escapeHtml(l.layer)} (${isStart ? '始点' : '終点'}: ${escapeHtml(p.rawCode || '')})</b><br>
+            ${sessionInfoStr}
             <div style="font-family:monospace; margin-top:2px;">
               X: ${p.x.toFixed(3)}<br>
               Y: ${p.y.toFixed(3)}<br>
@@ -4436,8 +4606,15 @@ function renderTsLayers(expandedData, showText = true) {
 
   // 2. 単独点・標高点・赤丸エラー点 (最前面 tsPane)
   points.forEach(p => {
+    // 該当セット(塊)が非表示ならスキップ
+    if (p.sessionId && sessionVisMap[p.sessionId] === false) return;
+
+    const sBadge = p.instName
+      ? `<span style="font-size:10px; color:#0284c7; background:#e0f2fe; padding:1px 5px; border-radius:3px; font-weight:bold;">セット#${p.sessionId}: ${escapeHtml(p.instName)}${p.bsName ? '→' + escapeHtml(p.bsName) : ''}</span><br>`
+      : '';
+
     if (p.isError) {
-      // 赤丸エラー点 (半径6、白フチ、明滅パルスアニメーション)
+      // 赤丸エラー点
       const errMarker = L.circleMarker([p.lat, p.lng], {
         pane: 'tsPane',
         radius: 6,
@@ -4451,6 +4628,7 @@ function renderTsLayers(expandedData, showText = true) {
       errMarker.bindPopup(`
         <div style="font-size:12px; min-width:140px;">
           <b style="color:#ef4444; font-size:13px;">⚠️ ${escapeHtml(p.name)} (エラー点)</b><br>
+          ${sBadge}
           <div style="font-family:monospace; margin:4px 0;">
             X: ${p.x.toFixed(3)} m<br>
             Y: ${p.y.toFixed(3)} m<br>
@@ -4482,7 +4660,7 @@ function renderTsLayers(expandedData, showText = true) {
         source: 'ts'
       });
     } else {
-      // 正常なシンボル・標高点 (最前面 tsPane, 半径6、白フチ、明滅パルスアニメーション)
+      // 正常なシンボル・標高点
       const marker = L.circleMarker([p.lat, p.lng], {
         pane: 'tsPane',
         radius: 6,
@@ -4496,6 +4674,7 @@ function renderTsLayers(expandedData, showText = true) {
       marker.bindPopup(`
         <div style="font-size:12px; min-width:140px;">
           <b style="color:${p.color || '#0284c7'}; font-size:13px;">${escapeHtml(p.name)}</b><br>
+          ${sBadge}
           <div style="font-family:monospace; margin:4px 0;">
             X: ${p.x.toFixed(3)} m<br>
             Y: ${p.y.toFixed(3)} m<br>
@@ -4536,12 +4715,155 @@ function renderTsLayers(expandedData, showText = true) {
     }
   });
 
+  // 3. 器械点・後視点ステーションマーカー & 視準線の描画 (State.tsShowStations が true の場合)
+  if (State.tsShowStations) {
+    (State.tsSessions || []).forEach(sess => {
+      if (sess.visible === false) return;
+      if (!sess.instPoint) return;
+
+      const instLL = xyToLatLng(sess.instPoint.x, sess.instPoint.y, State.tsZoneId, true);
+      if (!instLL) return;
+
+      // 器械点マーカー (🔭)
+      const instIcon = L.divIcon({
+        className: 'ts-station-icon',
+        html: `<div style="background:${sess.color}; color:#fff; border:2px solid #fff; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.4); font-size:14px; cursor:pointer;" title="セット#${sess.id} 器械点: ${sess.instName}">🔭</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      const instM = L.marker([instLL.lat, instLL.lng], { icon: instIcon, pane: 'tsPane' });
+      instM.bindPopup(`
+        <div style="font-size:12px;">
+          <b style="color:${sess.color};">🔭 器械点: ${escapeHtml(sess.instName)}</b>
+          <span style="font-size:10px; background:#e2e8f0; padding:1px 4px; border-radius:3px; margin-left:4px;">セット#${sess.id}</span><br>
+          <div style="font-size:11px; color:#475569; margin:4px 0;">後視点: <b>${escapeHtml(sess.bsName || '未指定')}</b> | 観測: <b>${sess.pointCount}</b>点</div>
+          <div style="font-family:monospace; font-size:11px;">
+            X: ${sess.instPoint.x.toFixed(3)}<br>
+            Y: ${sess.instPoint.y.toFixed(3)}<br>
+            H: ${(sess.instPoint.z || sess.instPoint.h || 0).toFixed(3)} m
+          </div>
+        </div>
+      `);
+      tsLayerGroup.addLayer(instM);
+
+      // 後視点マーカー (🎯) & 視準線
+      if (sess.bsPoint) {
+        const bsLL = xyToLatLng(sess.bsPoint.x, sess.bsPoint.y, State.tsZoneId, true);
+        if (bsLL) {
+          // 視準線 (点線)
+          const sightLine = L.polyline([[instLL.lat, instLL.lng], [bsLL.lat, bsLL.lng]], {
+            pane: 'tsPane',
+            color: sess.color,
+            weight: 2,
+            dashArray: '4, 4',
+            opacity: 0.8
+          });
+          tsLayerGroup.addLayer(sightLine);
+
+          const bsIcon = L.divIcon({
+            className: 'ts-station-icon',
+            html: `<div style="background:#fff; color:${sess.color}; border:2px solid ${sess.color}; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 4px rgba(0,0,0,0.3); font-size:11px; font-weight:bold; cursor:pointer;" title="後視点: ${sess.bsName}">🎯</div>`,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+          });
+          const bsM = L.marker([bsLL.lat, bsLL.lng], { icon: bsIcon, pane: 'tsPane' });
+          bsM.bindPopup(`
+            <div style="font-size:12px;">
+              <b style="color:${sess.color};">🎯 後視点: ${escapeHtml(sess.bsName)}</b> (セット#${sess.id})<br>
+              <div style="font-size:11px; color:#475569; margin:2px 0;">器械点「${escapeHtml(sess.instName)}」より視準</div>
+              <div style="font-family:monospace; font-size:11px;">
+                X: ${sess.bsPoint.x.toFixed(3)}<br>
+                Y: ${sess.bsPoint.y.toFixed(3)}<br>
+                H: ${(sess.bsPoint.z || sess.bsPoint.h || 0).toFixed(3)} m
+              </div>
+            </div>
+          `);
+          tsLayerGroup.addLayer(bsM);
+        }
+      }
+    });
+  }
+
   // 注記レイヤーの表示・非表示反映
   if (showText) {
     if (!map.hasLayer(tsTextGroup)) map.addLayer(tsTextGroup);
   } else {
     if (map.hasLayer(tsTextGroup)) map.removeLayer(tsTextGroup);
   }
+}
+
+// 観測セット(塊)一覧UIの更新
+function updateTsSessionsList(sessions) {
+  const container = document.getElementById('tsSessionsList');
+  const countEl = document.getElementById('tsSessionsCount');
+  const secEl = document.getElementById('tsSessionsSection');
+  if (!container || !secEl) return;
+
+  if (!sessions || sessions.length === 0) {
+    secEl.style.display = 'none';
+    return;
+  }
+
+  secEl.style.display = 'block';
+  if (countEl) countEl.textContent = `${sessions.length} セット(塊)`;
+
+  container.innerHTML = sessions.map((sess, idx) => {
+    const isChecked = sess.visible !== false;
+    const bsLabel = sess.bsName ? ` → ${escapeHtml(sess.bsName)}` : '';
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; font-size:11px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1; min-width:0;">
+          <input type="checkbox" class="chk-ts-session" data-session-id="${sess.id}" ${isChecked ? 'checked' : ''}>
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${sess.color}; flex-shrink:0;"></span>
+          <b style="color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            #${sess.id}: ${escapeHtml(sess.instName)}${bsLabel}
+          </b>
+          <span style="color:#64748b; font-size:10px; flex-shrink:0;">(${sess.pointCount}点)</span>
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="zoomToTsSession(${sess.id})" style="padding:2px 6px; font-size:10px; height:24px; border-radius:4px; flex-shrink:0;">
+          🔍 ズーム
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  // チェックボックス変更イベント
+  container.querySelectorAll('.chk-ts-session').forEach(chk => {
+    chk.addEventListener('change', (e) => {
+      const sId = parseInt(e.target.dataset.sessionId, 10);
+      const sess = (State.tsSessions || []).find(s => s.id === sId);
+      if (sess) {
+        sess.visible = e.target.checked;
+        const showText = document.getElementById('chkTsShowText') ? document.getElementById('chkTsShowText').checked : true;
+        renderTsLayers(State.tsExpandedData, showText);
+      }
+    });
+  });
+}
+
+// 観測セット(塊)にズーム
+function zoomToTsSession(sessionId) {
+  if (!State.tsExpandedData) return;
+  const targetPts = (State.tsExpandedData.points || []).filter(p => p.sessionId === sessionId);
+  const targetLines = (State.tsExpandedData.lines || []).filter(l => l.sessionId === sessionId);
+
+  const coords = [];
+  targetPts.forEach(p => coords.push([p.lat, p.lng]));
+  targetLines.forEach(l => l.points.forEach(p => coords.push([p.lat, p.lng])));
+
+  const sess = (State.tsSessions || []).find(s => s.id === sessionId);
+  if (sess && sess.instPoint) {
+    const instLL = xyToLatLng(sess.instPoint.x, sess.instPoint.y, State.tsZoneId, true);
+    if (instLL) coords.push([instLL.lat, instLL.lng]);
+  }
+
+  if (coords.length === 0) {
+    showToast('このセットに表示可能な観測点がありません');
+    return;
+  }
+  const bounds = L.latLngBounds(coords);
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 21 });
+  showToast(`セット#${sessionId} にフォーカスしました`);
 }
 
 // 特定の結線へ超拡大ズーム (70cm等の極小結線でも画面いっぱいにフォーカス)
@@ -4619,6 +4941,8 @@ function clearTsData() {
   State.tsLastTaiKaiPoints = [];
   State.tsLastAlertMessages = [];
   State.tsLastCovMessages = [];
+  State.tsSessions = [];
+  State.tsExpandedData = null;
 
   const fileO1k = document.getElementById('tsO1kInput');
   const fileCsv = document.getElementById('tsCsvInput');
@@ -4627,6 +4951,8 @@ function clearTsData() {
 
   const resPanel = document.getElementById('tsResultPanel');
   if (resPanel) resPanel.style.display = 'none';
+  const sessSec = document.getElementById('tsSessionsSection');
+  if (sessSec) sessSec.style.display = 'none';
   const errSec = document.getElementById('tsErrorSection');
   if (errSec) errSec.style.display = 'none';
   const warnSec = document.getElementById('tsAccuracyWarnSection');
