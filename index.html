@@ -797,19 +797,21 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.12);
     }
 
-    /* 器械点・後視点ステーション特大ラベル (点名切替でも常時表示・高視認性) */
+    /* 器械点・後視点ステーション特大ラベル (点名切替でも常時表示・点の上側に配置) */
     .ts-station-label-wrap {
       background: transparent !important;
       border: none !important;
-      white-space: nowrap !important;
-      overflow: visible !important;
+      width: 0 !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
       pointer-events: none !important;
     }
     .ts-station-large-badge {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      font-size: 15px;
+      font-size: 14.5px;
       font-weight: 800;
       padding: 3px 10px;
       border-radius: 8px;
@@ -817,8 +819,13 @@
       backdrop-filter: blur(4px);
       box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
       line-height: 1.3;
+      white-space: nowrap !important;
       pointer-events: auto;
       user-select: none;
+      position: absolute;
+      bottom: 20px; /* 点(マーカー)の上側に配置 */
+      left: 50%;
+      transform: translateX(-50%); /* 水平中央揃え */
     }
   </style>
 </head>
@@ -4770,7 +4777,7 @@ function renderTsLayers(expandedData, showText = true) {
       `);
       tsLayerGroup.addLayer(instM);
 
-      // 器械点特大ラベル (点名切替をOFFにしても常時表示)
+      // 器械点特大ラベル (点の上側に常時表示)
       const instLabelIcon = L.divIcon({
         className: 'ts-station-label-wrap',
         html: `<div class="ts-station-large-badge" style="color:#0f172a; border:2px solid ${sess.color};">
@@ -4778,7 +4785,8 @@ function renderTsLayers(expandedData, showText = true) {
           <span style="font-size:14.5px; font-weight:800; color:${sess.color};">${escapeHtml(sess.instName)}</span>
           <span style="font-size:10px; color:#64748b; font-weight:600;">#${sess.id}</span>
         </div>`,
-        iconAnchor: [-18, 15]
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
       });
       tsLayerGroup.addLayer(L.marker([instLL.lat, instLL.lng], { icon: instLabelIcon, pane: 'tsPane', interactive: false }));
 
@@ -4837,7 +4845,7 @@ function renderTsLayers(expandedData, showText = true) {
           `);
           tsLayerGroup.addLayer(bsM);
 
-          // 後視点特大ラベル (点名切替をOFFにしても常時表示)
+          // 後視点特大ラベル (点の上側に常時表示)
           const bsLabelIcon = L.divIcon({
             className: 'ts-station-label-wrap',
             html: `<div class="ts-station-large-badge" style="color:#0f172a; border:2px solid ${sess.color};">
@@ -4845,7 +4853,8 @@ function renderTsLayers(expandedData, showText = true) {
               <span style="font-size:14.5px; font-weight:800; color:${sess.color};">${escapeHtml(sess.bsName)}</span>
               <span style="font-size:10px; color:#64748b; font-weight:600;">(後視)</span>
             </div>`,
-            iconAnchor: [-16, 14]
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
           });
           tsLayerGroup.addLayer(L.marker([bsLL.lat, bsLL.lng], { icon: bsLabelIcon, pane: 'tsPane', interactive: false }));
         }
