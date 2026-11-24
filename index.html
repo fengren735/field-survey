@@ -885,7 +885,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.4 (2026/11/24 11:15)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.5 (2026/11/24 11:58)</span>
     </div>
   </div>
 
@@ -1407,7 +1407,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.4 (2026/11/24 11:15)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.5 (2026/11/24 11:58)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1518,6 +1518,7 @@ const State = {
   autoZone: true,
   isSurveyAxis: true, // true: 測量系(X:北, Y:東), false: 数学系(X:東, Y:北)
   currentPosition: null, // { lat, lng, x, y, h, acc, hAccuracy, src }
+  isGsiElevLoading: false, // 国土地理院標高APIの取得中フラグ
   isWatchingGps: false,
   watchId: null,
   knownPoints: [], // [{ id, name, x, y, h, zoneId, lat, lng }]
@@ -1721,34 +1722,71 @@ function xyToLatLng(input1, input2, zoneId, isSurvey) {
   }
 }
 
-// 国土地理院 標高API取得 (JSON) - タイムアウト4秒付き
+// 国土地理院 標高API取得 (JSON) レートリミッター付きキュー (公式制限: 10秒間に最大10回まで・安全マージン付1.3秒間隔)
+const elevQueue = [];
+let isElevProcessing = false;
+let lastElevCallTime = 0;
+const elevCache = {}; // "lat,lon" -> { h, src }
+
 async function fetchGsiElevation(lat, lon) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-  try {
-    const url = `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lat=${lat}&lon=${lon}&outtype=JSON`;
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) throw new Error('APIレスポンスエラー');
-    const data = await res.json();
-    if (data && typeof data.elevation === 'number') {
-      return {
-        h: data.elevation,
-        src: data.hsrc || '地理院DEM'
-      };
-    } else if (data && !isNaN(parseFloat(data.elevation))) {
-      return {
-        h: parseFloat(data.elevation),
-        src: data.hsrc || '地理院DEM'
-      };
-    }
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn('標高API取得エラー:', err);
+  if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) return null;
+  const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+  if (elevCache[key] !== undefined) {
+    return elevCache[key];
   }
-  return null;
+
+  return new Promise((resolve) => {
+    elevQueue.push({ lat, lon, key, resolve });
+    processElevQueue();
+  });
+}
+
+async function processElevQueue() {
+  if (isElevProcessing || elevQueue.length === 0) return;
+  isElevProcessing = true;
+
+  while (elevQueue.length > 0) {
+    const item = elevQueue.shift();
+    // 10秒間に10回を超えない制限を安全マージンをもって厳守するため、直前のリクエストから最低1300ms(1.3秒・10秒約7回ペース)空ける
+    const now = Date.now();
+    const elapsed = now - lastElevCallTime;
+    if (elapsed < 1300) {
+      await new Promise(r => setTimeout(r, 1300 - elapsed));
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const url = `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lat=${item.lat}&lon=${item.lon}&outtype=JSON`;
+      lastElevCallTime = Date.now();
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error('APIレスポンスエラー');
+      const data = await res.json();
+      let result = null;
+      if (data && typeof data.elevation === 'number') {
+        result = {
+          h: data.elevation,
+          src: data.hsrc || '地理院DEM'
+        };
+      } else if (data && !isNaN(parseFloat(data.elevation))) {
+        result = {
+          h: parseFloat(data.elevation),
+          src: data.hsrc || '地理院DEM'
+        };
+      }
+      elevCache[item.key] = result;
+      item.resolve(result);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('標高API取得エラー:', err);
+      item.resolve(null);
+    }
+  }
+
+  isElevProcessing = false;
 }
 
 // --- 4. 地図初期化 (Leaflet + 国土地理院タイル) ---
@@ -2626,6 +2664,7 @@ function toggleGps() {
     if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
     State.isWatchingGps = false;
     State.watchId = null;
+    State.isGsiElevLoading = false;
     document.getElementById('gpsIcon').textContent = '📍';
     document.getElementById('gpsText').textContent = 'GPS測位開始';
     document.getElementById('btnGps').classList.remove('active');
@@ -2640,6 +2679,13 @@ function toggleGps() {
     document.getElementById('gpsText').textContent = '測位中 (追従ON)';
     document.getElementById('btnGps').classList.add('active');
     State.isWatchingGps = true;
+    State.isGsiElevLoading = true;
+    const elHGsi = document.getElementById('dispHGsi');
+    if (elHGsi) {
+      elHGsi.textContent = '取得中...';
+      elHGsi.style.color = '#0284c7';
+      elHGsi.style.fontWeight = 'bold';
+    }
 
     State.watchId = navigator.geolocation.watchPosition(
       onGpsSuccess,
@@ -2685,21 +2731,15 @@ async function onGpsSuccess(pos) {
   }
 
   // 2. 国土地理院 標高API (DEM地表面標高)
-  let gsiElevation = null;
-  let gsiSrc = '';
+  let gsiElevation = State.currentPosition ? State.currentPosition.gsiH : null;
+  let gsiSrc = State.currentPosition ? State.currentPosition.gsiSrc : '';
 
   const shouldFetchApi = !State.currentPosition ||
+    State.currentPosition.gsiH === null ||
     (Math.abs(State.currentPosition.lat - latitude) > 0.0001 || Math.abs(State.currentPosition.lng - longitude) > 0.0001);
 
   if (shouldFetchApi) {
-    const apiRes = await fetchGsiElevation(latitude, longitude);
-    if (apiRes) {
-      gsiElevation = apiRes.h;
-      gsiSrc = apiRes.src;
-    }
-  } else if (State.currentPosition) {
-    gsiElevation = State.currentPosition.gsiH;
-    gsiSrc = State.currentPosition.gsiSrc;
+    State.isGsiElevLoading = true;
   }
 
   State.currentPosition = {
@@ -2721,6 +2761,28 @@ async function onGpsSuccess(pos) {
   updateMapGpsMarker();
   if (State.navActive) {
     updateStakeoutNav();
+  }
+
+  // 標高API非同期取得 (キュー＆レートリミッター経由)
+  if (shouldFetchApi) {
+    const curLat = latitude;
+    const curLng = longitude;
+    fetchGsiElevation(curLat, curLng).then((apiRes) => {
+      if (State.currentPosition && Math.abs(State.currentPosition.lat - curLat) <= 0.0001 && Math.abs(State.currentPosition.lng - curLng) <= 0.0001) {
+        if (apiRes && typeof apiRes.h === 'number') {
+          State.currentPosition.gsiH = apiRes.h;
+          State.currentPosition.gsiSrc = apiRes.src;
+          State.currentPosition.h = apiRes.h;
+        } else {
+          State.currentPosition.gsiH = null;
+        }
+      }
+      State.isGsiElevLoading = false;
+      updateCoordinateDisplays();
+    }).catch(() => {
+      State.isGsiElevLoading = false;
+      updateCoordinateDisplays();
+    });
   }
 }
 
@@ -2758,10 +2820,19 @@ function updateCoordinateDisplays() {
   document.getElementById('dispValY').textContent = `${formatCoord(dispY, 3)} m`;
 
   // 国土地理院標高
-  if (p.gsiH !== null && typeof p.gsiH === 'number') {
-    document.getElementById('dispHGsi').textContent = `${p.gsiH.toFixed(2)} m`;
+  const elHGsi = document.getElementById('dispHGsi');
+  if (State.isGsiElevLoading) {
+    elHGsi.textContent = '取得中...';
+    elHGsi.style.color = '#0284c7';
+    elHGsi.style.fontWeight = 'bold';
+  } else if (p.gsiH !== null && typeof p.gsiH === 'number') {
+    elHGsi.textContent = `${p.gsiH.toFixed(2)} m`;
+    elHGsi.style.color = '';
+    elHGsi.style.fontWeight = '';
   } else {
-    document.getElementById('dispHGsi').textContent = `---`;
+    elHGsi.textContent = `---`;
+    elHGsi.style.color = '';
+    elHGsi.style.fontWeight = '';
   }
 
   // GPS高度
@@ -5844,12 +5915,16 @@ function fillModalWithCurrentPos() {
   document.getElementById('modalCoordY').value = (isSur ? p.surveyY : p.mathY).toFixed(3);
   
   // 地理院標高を優先、無ければGPS
-  const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
-  if (hVal !== null) {
-    document.getElementById('modalCoordH').value = Number(hVal).toFixed(3);
+  if (State.isGsiElevLoading && p.gsiH === null) {
+    document.getElementById('modalCoordH').value = '取得中...';
+  } else {
+    const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
+    if (hVal !== null) {
+      document.getElementById('modalCoordH').value = Number(hVal).toFixed(3);
+    }
   }
   document.getElementById('modalZone').value = State.currentZoneId;
-  const srcName = p.gsiH !== null ? '地理院' : (p.gpsH !== null ? 'GPS' : 'なし');
+  const srcName = p.gsiH !== null ? '地理院' : (p.gpsH !== null ? 'GPS' : (State.isGsiElevLoading ? '取得中' : 'なし'));
   showToast(`現在地を反映 (H: ${srcName})`);
 }
 
@@ -5863,18 +5938,23 @@ async function fetchElevForModal() {
     return;
   }
 
-  showToast('国土地理院 標高APIを取得中...');
   const latlng = xyToLatLng(xVal, yVal, zoneId, State.isSurveyAxis);
   if (!latlng) {
     alert('座標変換に失敗しました。');
     return;
   }
 
+  const inputH = document.getElementById('modalCoordH');
+  const oldH = inputH.value;
+  inputH.value = '取得中...';
+  showToast('国土地理院 標高APIを取得中...');
+
   const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
   if (elevRes && typeof elevRes.h === 'number') {
-    document.getElementById('modalCoordH').value = elevRes.h.toFixed(3);
+    inputH.value = elevRes.h.toFixed(3);
     showToast(`標高を取得しました (${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
   } else {
+    inputH.value = (oldH === '取得中...') ? '' : oldH;
     alert('標高データを取得できませんでした (海洋や海外、またはAPI一時不可)。');
   }
 }
@@ -5887,7 +5967,7 @@ function savePointFromModal() {
   const hRaw = normalizeNumberStr(document.getElementById('modalCoordH').value);
   const x = parseFloat(xRaw);
   const y = parseFloat(yRaw);
-  const h = hRaw !== '' ? parseFloat(hRaw) : null;
+  const h = (hRaw !== '' && hRaw !== '取得中...') ? parseFloat(hRaw) : null;
   const zoneId = parseInt(document.getElementById('modalZone').value, 10);
 
   if (isNaN(x) || isNaN(y)) {
@@ -5964,7 +6044,7 @@ function savePointFromInline() {
 
   const x = parseFloat(xRaw);
   const y = parseFloat(yRaw);
-  const h = hRaw !== '' ? parseFloat(hRaw) : null;
+  const h = (hRaw !== '' && hRaw !== '取得中...') ? parseFloat(hRaw) : null;
   const zoneId = parseInt(document.getElementById('inlinePointZone').value, 10);
 
   if (isNaN(x) || isNaN(y)) {
@@ -6040,12 +6120,16 @@ function fillInlineWithCurrentPos() {
   document.getElementById('inlineCoordX').value = (isSur ? p.surveyX : p.mathX).toFixed(3);
   document.getElementById('inlineCoordY').value = (isSur ? p.surveyY : p.mathY).toFixed(3);
 
-  const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
-  if (hVal !== null) {
-    document.getElementById('inlineCoordH').value = Number(hVal).toFixed(3);
+  if (State.isGsiElevLoading && p.gsiH === null) {
+    document.getElementById('inlineCoordH').value = '取得中...';
+  } else {
+    const hVal = p.gsiH !== null ? p.gsiH : p.gpsH;
+    if (hVal !== null) {
+      document.getElementById('inlineCoordH').value = Number(hVal).toFixed(3);
+    }
   }
   document.getElementById('inlinePointZone').value = State.currentZoneId;
-  const srcName = p.gsiH !== null ? '地理院T.P.' : (p.gpsH !== null ? 'GPS' : 'なし');
+  const srcName = p.gsiH !== null ? '地理院T.P.' : (p.gpsH !== null ? 'GPS' : (State.isGsiElevLoading ? '取得中' : 'なし'));
   showToast(`現在地の座標を反映 (H: ${srcName})`);
 }
 
@@ -6061,18 +6145,23 @@ async function fetchElevForInline() {
     return;
   }
 
-  showToast('国土地理院 標高APIを取得中...');
   const latlng = xyToLatLng(xVal, yVal, zoneId, State.isSurveyAxis);
   if (!latlng) {
     alert('座標変換に失敗しました。');
     return;
   }
 
+  const inputH = document.getElementById('inlineCoordH');
+  const oldH = inputH.value;
+  inputH.value = '取得中...';
+  showToast('国土地理院 標高APIを取得中...');
+
   const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
   if (elevRes && typeof elevRes.h === 'number') {
-    document.getElementById('inlineCoordH').value = elevRes.h.toFixed(3);
+    inputH.value = elevRes.h.toFixed(3);
     showToast(`標高を取得しました (T.P. ${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
   } else {
+    inputH.value = (oldH === '取得中...') ? '' : oldH;
     alert('標高データを取得できませんでした (海域またはAPI一時不可)。');
   }
 }
