@@ -887,7 +887,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.9 (2026/11/24 14:49)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.0 (2026/11/24 15:06)</span>
     </div>
   </div>
 
@@ -1409,7 +1409,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.9 (2026/11/24 14:49)</b>
+              アプリVer: <b id="settingsVerLabel">v1.7.0 (2026/11/24 15:06)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1417,6 +1417,29 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for TS Observation Alert (★警告・対回エラー確認ダイアログ) -->
+  <div class="modal-overlay" id="tsAlertModal">
+    <div class="modal-card" style="max-width:440px; border-top: 4px solid #ef4444;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:22px;">⚠️</span>
+        <div>
+          <div class="modal-title" style="color:#b91c1c; font-weight:800; font-size:16px;">確認してください</div>
+          <div style="font-size:11px; color:#64748b;">観測データ展開中に精度差異または対回エラーが検出されました</div>
+        </div>
+      </div>
+
+      <div id="tsAlertModalList" style="max-height:220px; overflow-y:auto; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px; font-size:12px; line-height:1.55; color:#991b1b; font-family:monospace; display:flex; flex-direction:column; gap:6px;">
+        <!-- エラー・警告内容がここに入る -->
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+        <button class="btn btn-primary" id="btnTsAlertClose" style="background:#ef4444; border-color:#dc2626; padding:8px 20px; font-weight:bold; font-size:13px;">
+          確認しました（閉じる）
+        </button>
       </div>
     </div>
   </div>
@@ -2193,6 +2216,18 @@ function initUi() {
     });
   }
 
+  // TS展開 ★警告・対回エラーモーダル閉じるイベント
+  const btnTsAlertClose = document.getElementById('btnTsAlertClose');
+  if (btnTsAlertClose) {
+    btnTsAlertClose.addEventListener('click', closeTsAlertModal);
+  }
+  const tsAlertModalEl = document.getElementById('tsAlertModal');
+  if (tsAlertModalEl) {
+    tsAlertModalEl.addEventListener('click', (e) => {
+      if (e.target === tsAlertModalEl) closeTsAlertModal();
+    });
+  }
+
   // TS観測 & T3D自動展開 UIイベント
   const tsZoneSel = document.getElementById('tsZoneSelect');
   if (tsZoneSel) {
@@ -2361,6 +2396,13 @@ function initUi() {
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
+
+            // ★が一つでも含まれる警告、または対回エラーの検出 -> 「確認してください」モーダルダイアログ表示
+            const rawAlerts = (typeof o1kRes !== 'undefined' && o1kRes.alrtMsgList) ? o1kRes.alrtMsgList : (State.tsLastAlertMessages || []);
+            const starAlerts = rawAlerts.filter(msg => msg.includes('★') || msg.includes('対回'));
+            if (starAlerts.length > 0) {
+              openTsAlertModal(starAlerts);
+            }
           } catch (err) {
             console.error(err);
             alert('T3DX展開処理中にエラーが発生しました: ' + err.message);
@@ -2456,6 +2498,13 @@ function initUi() {
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
+
+            // ★が一つでも含まれる警告、または対回エラーの検出 -> 「確認してください」モーダルダイアログ表示
+            const rawAlerts = (typeof o1kRes !== 'undefined' && o1kRes.alrtMsgList) ? o1kRes.alrtMsgList : (State.tsLastAlertMessages || []);
+            const starAlerts = rawAlerts.filter(msg => msg.includes('★') || msg.includes('対回'));
+            if (starAlerts.length > 0) {
+              openTsAlertModal(starAlerts);
+            }
           } catch (err) {
             console.error(err);
             alert('T3DC展開処理中にエラーが発生しました: ' + err.message);
@@ -4265,6 +4314,11 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
 
             // 対回バッファリセット
             lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
+          } else if (oc.toLowerCase() === 'r2001') {
+            const msg = `危険度：★★★ 対回観測系列の観測点数不一致・データ欠損 (R1:${lstR1.length}, L1:${lstL1.length}, L2:${lstL2.length}, R2:${lstR2.length}) [行:${lineNum}]`;
+            logs.push({ level: 'danger', msg });
+            alrtMsgList.push(msg);
+            lstR1 = []; lstL1 = []; lstL2 = []; lstR2 = [];
           }
         }
       }
@@ -4415,6 +4469,13 @@ async function processT3DxO1k(o1kText, targetZoneId, options = { useGeoid: true,
         }
       }
     }
+  }
+
+  // ファイル末尾で対回観測が中途半端に残っている場合
+  if (isTaiKaiMode && lstR1.length > 0) {
+    const msg = `危険度：★★★ 対回観測が途中で途切れたため計算成果は算出されませんでした [未完了観測:${lstR1.length}点]`;
+    logs.push({ level: 'danger', msg });
+    alrtMsgList.push(msg);
   }
 
   return { points: calculatedPoints, taiKaiPoints, logs, alrtMsgList, covMsgList, sessions };
@@ -5909,6 +5970,30 @@ function openKnownModal(pt = null) {
 
 function closeModal() {
   document.getElementById('pointModal').classList.remove('active');
+}
+
+// TS展開 精度差異・対回エラー確認モーダル操作
+function openTsAlertModal(alertMessages) {
+  const modal = document.getElementById('tsAlertModal');
+  const listEl = document.getElementById('tsAlertModalList');
+  if (!modal || !listEl || !alertMessages || alertMessages.length === 0) return;
+
+  listEl.innerHTML = alertMessages.map(msg => {
+    let badge = '⚠️';
+    if (msg.includes('★★★')) badge = '🚨';
+    else if (msg.includes('★★☆')) badge = '⚠️';
+    else if (msg.includes('★☆☆')) badge = '⚡';
+    return `<div style="background:#ffffff; border:1px solid #fca5a5; border-radius:5px; padding:6px 9px; word-break:break-all;">
+      <span style="font-weight:bold;">${badge}</span> ${escapeHtml(msg)}
+    </div>`;
+  }).join('');
+
+  modal.classList.add('active');
+}
+
+function closeTsAlertModal() {
+  const modal = document.getElementById('tsAlertModal');
+  if (modal) modal.classList.remove('active');
 }
 
 function fillModalWithCurrentPos() {
