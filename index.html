@@ -885,7 +885,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.5 (2026/11/24 11:58)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.6 (2026/11/24 14:25)</span>
     </div>
   </div>
 
@@ -1407,7 +1407,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.5 (2026/11/24 11:58)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.6 (2026/11/24 14:25)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -4487,19 +4487,20 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
     // 2桁目が 'Z' または 'z' の場合はすべて単独点・シンボル(3桁目以降が点名)として認識
     const isSymbolCode = (KESSEN === 'Z' || KESSEN === 'z');
 
-    // エラーケース1: コード体系外
+    // 点名規則(線種コード・2桁目Z)に合致しない場合 -> 赤点・エラー表示をやめ、通常の観測点として描画
     if (!isLineCode && !isSymbolCode) {
       if (currentLinePts.length > 0) {
-        commitLine(false); // 結線ブレイク！
-        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: コード「${codeStr}」が体系外のため直前結線をブレイクしました` });
+        commitLine(false); // 結線中だった場合は結線をブレイク確定
       }
-      // 赤丸・ポイント名で描画
+      const sessionColor = TS_SESSION_COLORS[(ptObj.sessionId - 1) % TS_SESSION_COLORS.length] || '#0284c7';
       pointsResult.push({
         ...ptObj,
-        isError: true,
-        errorMsg: 'コード体系外',
-        name: cleanPointName(codeStr) || `点${lineNo}`,
-        color: '#ef4444'
+        isError: false,
+        name: cleanPointName(codeStr) || codeStr || `点${lineNo}`,
+        sensyu: '',
+        layer: '観測点',
+        color: sessionColor,
+        isElevation: false
       });
       preKessen = null;
       preSensyu = null;
@@ -4517,15 +4518,17 @@ function expandT3DCode(t3dPoints, targetZoneId, options = { showText: true }) {
         errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 結線完了前に線種が「${preSensyu}」から「${upSensyu}」に変更されたため結線をブレイクしました` });
       }
 
-      // 結線開始点(A)がないのに B または C が来た
+      // 結線開始点(A)がないのに B または C が来た場合 (単独観測点として安全に描画)
       if ((upKessen === 'B' || upKessen === 'C') && preKessen !== 'A') {
-        errorsList.push({ line: lineNo, code: codeStr, msg: `${lineNo}行目: 開始点(A)のない単独結線終了点です` });
+        const sessionColor = TS_SESSION_COLORS[(ptObj.sessionId - 1) % TS_SESSION_COLORS.length] || '#0284c7';
         pointsResult.push({
           ...ptObj,
-          isError: true,
-          errorMsg: '結線開始コード(A)欠落',
+          isError: false,
           name: cleanPointName(codeStr) || codeStr,
-          color: '#ef4444'
+          sensyu: upSensyu,
+          layer: `単独点_${upSensyu}`,
+          color: sessionColor,
+          isElevation: false
         });
         preKessen = null;
         preSensyu = null;
