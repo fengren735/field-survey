@@ -797,7 +797,7 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.12);
     }
 
-    /* 器械点・後視点ステーション特大ラベル (点名切替でも常時表示・点の下側に配置) */
+    /* 器械点・後視点ステーション特大ラベル (点名切替でも常時表示・破線の1個手前に配置) */
     .ts-station-label-wrap {
       background: transparent !important;
       border: none !important;
@@ -806,6 +806,7 @@
       margin: 0 !important;
       padding: 0 !important;
       pointer-events: none !important;
+      z-index: 1000 !important;
     }
     .ts-station-large-badge {
       display: inline-flex;
@@ -826,6 +827,7 @@
       top: 20px; /* 点(マーカー)の下側に配置 */
       left: 50%;
       transform: translateX(-50%); /* 水平中央揃え */
+      z-index: 1000 !important;
     }
 
     /* 視準矢印専用ラッパー (完全中央センタリング保証) */
@@ -885,7 +887,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.7 (2026/11/24 14:28)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.8 (2026/11/24 14:38)</span>
     </div>
   </div>
 
@@ -1407,7 +1409,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.7 (2026/11/24 14:28)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.8 (2026/11/24 14:38)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1844,6 +1846,12 @@ const dxfTextGroup = L.layerGroup().addTo(map); // DXF文字グループ (注記
 if (!map.getPane('tsPane')) {
   map.createPane('tsPane');
   map.getPane('tsPane').style.zIndex = '480';
+}
+// 器械点・後視点ステーション特大ラベル専用最前面ペイン (破線や通常点名より1個手前に確実に描画)
+if (!map.getPane('tsStationLabelPane')) {
+  map.createPane('tsStationLabelPane');
+  map.getPane('tsStationLabelPane').style.zIndex = '620';
+  map.getPane('tsStationLabelPane').style.pointerEvents = 'auto';
 }
 const tsLayerGroup = L.featureGroup().addTo(map); // TS観測・T3D展開図形グループ (遺構線・ポリライン・標高点・赤丸エラー)
 const tsTextGroup = L.layerGroup().addTo(map); // TS観測・T3D展開注記グループ (点名・標高・属性)
@@ -4837,46 +4845,11 @@ function renderTsLayers(expandedData, showText = true) {
       const instLL = xyToLatLng(sess.instPoint.x, sess.instPoint.y, State.tsZoneId, true);
       if (!instLL) return;
 
-      // 器械点マーカー (🔭)
-      const instIcon = L.divIcon({
-        className: 'ts-station-icon',
-        html: `<div style="background:${sess.color}; color:#fff; border:2.5px solid #fff; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.45); font-size:15px; cursor:pointer;" title="セット#${sess.id} 器械点: ${sess.instName}">🔭</div>`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
-      });
-      const instM = L.marker([instLL.lat, instLL.lng], { icon: instIcon, pane: 'tsPane' });
-      instM.bindPopup(`
-        <div style="font-size:12px;">
-          <b style="color:${sess.color}; font-size:13px;">🔭 器械点: ${escapeHtml(sess.instName)}</b>
-          <span style="font-size:10px; background:#e2e8f0; padding:1px 4px; border-radius:3px; margin-left:4px; font-weight:bold;">セット#${sess.id}</span><br>
-          <div style="font-size:11px; color:#475569; margin:4px 0;">後視点: <b>${escapeHtml(sess.bsName || '未指定')}</b> | 観測: <b>${sess.pointCount}</b>点</div>
-          <div style="font-family:monospace; font-size:11px;">
-            X: ${sess.instPoint.x.toFixed(3)}<br>
-            Y: ${sess.instPoint.y.toFixed(3)}<br>
-            H: ${(sess.instPoint.z || sess.instPoint.h || 0).toFixed(3)} m
-          </div>
-        </div>
-      `);
-      tsLayerGroup.addLayer(instM);
-
-      // 器械点特大ラベル (点の上側に常時表示)
-      const instLabelIcon = L.divIcon({
-        className: 'ts-station-label-wrap',
-        html: `<div class="ts-station-large-badge" style="color:#0f172a; border:2px solid ${sess.color};">
-          <span style="font-size:16px;">🔭</span>
-          <span style="font-size:14.5px; font-weight:800; color:${sess.color};">${escapeHtml(sess.instName)}</span>
-          <span style="font-size:10px; color:#64748b; font-weight:600;">#${sess.id}</span>
-        </div>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0]
-      });
-      tsLayerGroup.addLayer(L.marker([instLL.lat, instLL.lng], { icon: instLabelIcon, pane: 'tsPane', interactive: false }));
-
-      // 後視点マーカー (🎯) & 視準線 & 後視点方向矢印
+      // 1. 視準線 (破線) & 視準矢印を先に描画 (破線がラベルの背面を通るようにする)
       if (sess.bsPoint) {
         const bsLL = xyToLatLng(sess.bsPoint.x, sess.bsPoint.y, State.tsZoneId, true);
         if (bsLL) {
-          // 視準線 (点線)
+          // 視準線 (破線)
           const sightLine = L.polyline([[instLL.lat, instLL.lng], [bsLL.lat, bsLL.lng]], {
             pane: 'tsPane',
             color: sess.color,
@@ -4927,7 +4900,7 @@ function renderTsLayers(expandedData, showText = true) {
           `);
           tsLayerGroup.addLayer(bsM);
 
-          // 後視点特大ラベル (点の上側に常時表示)
+          // 後視点特大ラベル (破線の1個手前・最前面ペイン tsStationLabelPane に表示)
           const bsLabelIcon = L.divIcon({
             className: 'ts-station-label-wrap',
             html: `<div class="ts-station-large-badge" style="color:#0f172a; border:2px solid ${sess.color};">
@@ -4938,7 +4911,44 @@ function renderTsLayers(expandedData, showText = true) {
             iconSize: [0, 0],
             iconAnchor: [0, 0]
           });
-          tsLayerGroup.addLayer(L.marker([bsLL.lat, bsLL.lng], { icon: bsLabelIcon, pane: 'tsPane', interactive: false }));
+          tsLayerGroup.addLayer(L.marker([bsLL.lat, bsLL.lng], { icon: bsLabelIcon, pane: 'tsStationLabelPane', interactive: false }));
+        }
+      }
+
+      // 2. 器械点マーカー (🔭)
+      const instIcon = L.divIcon({
+        className: 'ts-station-icon',
+        html: `<div style="background:${sess.color}; color:#fff; border:2.5px solid #fff; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.45); font-size:15px; cursor:pointer;" title="セット#${sess.id} 器械点: ${sess.instName}">🔭</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+      const instM = L.marker([instLL.lat, instLL.lng], { icon: instIcon, pane: 'tsPane' });
+      instM.bindPopup(`
+        <div style="font-size:12px;">
+          <b style="color:${sess.color}; font-size:13px;">🔭 器械点: ${escapeHtml(sess.instName)}</b>
+          <span style="font-size:10px; background:#e2e8f0; padding:1px 4px; border-radius:3px; margin-left:4px; font-weight:bold;">セット#${sess.id}</span><br>
+          <div style="font-size:11px; color:#475569; margin:4px 0;">後視点: <b>${escapeHtml(sess.bsName || '未指定')}</b> | 観測: <b>${sess.pointCount}</b>点</div>
+          <div style="font-family:monospace; font-size:11px;">
+            X: ${sess.instPoint.x.toFixed(3)}<br>
+            Y: ${sess.instPoint.y.toFixed(3)}<br>
+            H: ${(sess.instPoint.z || sess.instPoint.h || 0).toFixed(3)} m
+          </div>
+        </div>
+      `);
+      tsLayerGroup.addLayer(instM);
+
+      // 器械点特大ラベル (破線の1個手前・最前面ペイン tsStationLabelPane に表示)
+      const instLabelIcon = L.divIcon({
+        className: 'ts-station-label-wrap',
+        html: `<div class="ts-station-large-badge" style="color:#0f172a; border:2px solid ${sess.color};">
+          <span style="font-size:16px;">🔭</span>
+          <span style="font-size:14.5px; font-weight:800; color:${sess.color};">${escapeHtml(sess.instName)}</span>
+          <span style="font-size:10px; color:#64748b; font-weight:600;">#${sess.id}</span>
+        </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
+      });
+      tsLayerGroup.addLayer(L.marker([instLL.lat, instLL.lng], { icon: instLabelIcon, pane: 'tsStationLabelPane', interactive: false }));
         }
       }
     });
