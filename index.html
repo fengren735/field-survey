@@ -908,7 +908,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.4 (2026/11/24 16:20)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.6 (2026/11/24 16:54)</span>
     </div>
   </div>
 
@@ -1426,7 +1426,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.7.4 (2026/11/24 16:20)</b>
+              アプリVer: <b id="settingsVerLabel">v1.7.6 (2026/11/24 16:54)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1872,6 +1872,9 @@ document.getElementById('btnToggleLayers').addEventListener('click', () => {
   map.removeLayer(tileLayers[State.activeLayer]);
   tileLayers[nextLayerKey].addTo(map);
   State.activeLayer = nextLayerKey;
+  if (State.dxfData) {
+    renderDxfEntities(false);
+  }
   showToast(`地図を「${layerNames[nextLayerKey]}」に変更`);
 });
 
@@ -3481,35 +3484,51 @@ function aciIndexToHex(colorIdx) {
   return '#000000';
 }
 
+function isWhiteColor(col) {
+  if (!col) return false;
+  if (typeof col === 'string') {
+    const c = col.trim().toLowerCase();
+    return c === '#ffffff' || c === '#fff' || c === 'white' || c === 'rgb(255,255,255)' || c === 'rgba(255,255,255,1)';
+  }
+  if (typeof col === 'number') {
+    return col === 16777215 || col === 7;
+  }
+  return false;
+}
+
 function getEntityRenderColor(ent) {
+  let resColor = '#000000';
+
   if (State.dxfColor !== 'original') {
-    return State.dxfColor;
-  }
-
-  // 1. エンティティ自身の直接色指定 (colorIndex: 1〜255)
-  if (typeof ent.colorIndex === 'number' && ent.colorIndex > 0 && ent.colorIndex < 256) {
-    return aciIndexToHex(ent.colorIndex);
-  }
-
-  // 2. エンティティのRGB整数値 (color: 24ビット整数)
-  if (typeof ent.color === 'number') {
-    return rgbIntToHex(ent.color);
-  }
-
-  // 3. 所属レイヤー (画層) の色
-  const layerName = ent.layer ? ent.layer.trim() : '0';
-  if (State.dxfLayerColors) {
+    resColor = State.dxfColor;
+  } else if (typeof ent.colorIndex === 'number' && ent.colorIndex > 0 && ent.colorIndex < 256) {
+    // 1. エンティティ自身の直接色指定 (colorIndex: 1〜255)
+    resColor = aciIndexToHex(ent.colorIndex);
+  } else if (typeof ent.color === 'number') {
+    // 2. エンティティのRGB整数値 (color: 24ビット整数)
+    resColor = rgbIntToHex(ent.color);
+  } else if (State.dxfLayerColors) {
+    // 3. 所属レイヤー (画層) の色
+    const layerName = ent.layer ? ent.layer.trim() : '0';
     if (State.dxfLayerColors[layerName]) {
-      return State.dxfLayerColors[layerName];
-    }
-    // 大文字小文字の違いにも対応
-    const lower = layerName.toLowerCase();
-    for (const [k, v] of Object.entries(State.dxfLayerColors)) {
-      if (k.toLowerCase() === lower) return v;
+      resColor = State.dxfLayerColors[layerName];
+    } else {
+      // 大文字小文字の違いにも対応
+      const lower = layerName.toLowerCase();
+      for (const [k, v] of Object.entries(State.dxfLayerColors)) {
+        if (k.toLowerCase() === lower) {
+          resColor = v;
+          break;
+        }
+      }
     }
   }
 
-  return '#000000'; // デフォルト黒
+  // 背景が写真（航空写真）以外の場合、白色・白系色は白背景と同化するため黒（#000000）で描画
+  if (State.activeLayer !== 'photo' && isWhiteColor(resColor)) {
+    return '#000000';
+  }
+  return resColor || '#000000';
 }
 
 // ファイル読み込み (UTF-8 / Shift_JIS 自動判定)
@@ -3863,9 +3882,13 @@ function renderDxfEntities(shouldZoom = false) {
       const pt = ent.startPoint || ent.position;
       const ll = xyToLatLng(pt.x, pt.y, zoneId, isSur);
       if (ll && ent.text) {
+        let finalTextColor = entColor;
+        if (State.activeLayer !== 'photo' && isWhiteColor(finalTextColor)) {
+          finalTextColor = '#000000';
+        }
         const textIcon = L.divIcon({
           className: 'dxf-text-icon',
-          html: `<div style="color:${entColor}; font-size:10px; font-weight:600; white-space:nowrap; text-shadow:1px 1px 2px white,-1px -1px 2px white; pointer-events:none;">${ent.text}</div>`,
+          html: `<div style="color:${finalTextColor}; font-size:10px; font-weight:600; white-space:nowrap; pointer-events:none;">${escapeHtml(ent.text)}</div>`,
           iconAnchor: [0, 10]
         });
         const textMarker = L.marker([ll.lat, ll.lng], { icon: textIcon, interactive: false });
