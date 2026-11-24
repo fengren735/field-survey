@@ -842,7 +842,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.1 (2026/11/23 22:45)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.6.2 (2026/11/24 10:01)</span>
     </div>
   </div>
 
@@ -1087,7 +1087,7 @@
 
           <div class="form-group">
             <label class="form-label">CSVファイルを選択 (.csv)</label>
-            <input type="file" id="csvFileInput" accept=".csv,text/csv,text/plain" class="input-text">
+            <input type="file" id="csvFileInput" accept=".csv,text/csv,text/plain,*/*" class="input-text">
           </div>
 
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
@@ -1129,7 +1129,7 @@
 
           <div class="form-group">
             <label class="form-label">DXFファイルを選択 (.dxf)</label>
-            <input type="file" id="dxfFileInput" accept=".dxf" class="input-text">
+            <input type="file" id="dxfFileInput" accept=".dxf,*/*" class="input-text">
           </div>
 
           <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted);">
@@ -1212,7 +1212,7 @@
 
             <div class="form-group" style="margin-top:8px;">
               <label class="form-label">O1K観測ファイル (.o1k)</label>
-              <input type="file" id="tsO1kInput" accept=".o1k,.O1K,.txt" class="input-box" style="padding:6px; font-size:12px;">
+              <input type="file" id="tsO1kInput" accept=".o1k,.O1K,.txt,*/*" class="input-box" style="padding:6px; font-size:12px;">
             </div>
 
             <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
@@ -1229,7 +1229,7 @@
           <div id="panelT3Dc" style="display:none; margin-top:10px;">
             <div class="form-group">
               <label class="form-label">T3D形式 CSVファイル (.csv)</label>
-              <input type="file" id="tsCsvInput" accept=".csv,.txt" class="input-box" style="padding:6px; font-size:12px;">
+              <input type="file" id="tsCsvInput" accept=".csv,.txt,*/*" class="input-box" style="padding:6px; font-size:12px;">
               <div style="font-size:10.5px; color:#64748b; margin-top:2px;">フォーマット: 点番号, 意味コード, X, Y, Z</div>
             </div>
           </div>
@@ -1343,7 +1343,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.6.1 (2026/11/23 22:45)</b>
+              アプリVer: <b id="settingsVerLabel">v1.6.2 (2026/11/24 10:01)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1485,6 +1485,28 @@ const State = {
 };
 
 // --- 3. ユーティリティ関数 ---
+// ファイルの文字コード自動判別 (Shift-JIS / UTF-8 両対応)
+function decodeTextAuto(arrayBuffer) {
+  try {
+    const sjisDecoder = new TextDecoder('shift_jis', { fatal: false });
+    const textSjis = sjisDecoder.decode(arrayBuffer);
+    if (!textSjis.includes('\ufffd')) {
+      return textSjis;
+    }
+    const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+    const textUtf8 = utf8Decoder.decode(arrayBuffer);
+    if (!textUtf8.includes('\ufffd')) {
+      return textUtf8;
+    }
+    const countSjis = (textSjis.match(/\ufffd/g) || []).length;
+    const countUtf8 = (textUtf8.match(/\ufffd/g) || []).length;
+    return countUtf8 < countSjis ? textUtf8 : textSjis;
+  } catch (e) {
+    const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+    return utf8Decoder.decode(arrayBuffer);
+  }
+}
+
 // 数値入力の正規化 (全角数字・全角マイナス・全角小数点を半角に自動変換)
 function normalizeNumberStr(str) {
   if (!str) return '';
@@ -2093,7 +2115,7 @@ function initUi() {
 
         reader.onload = async (ev) => {
           try {
-            const o1kText = ev.target.result;
+            const o1kText = decodeTextAuto(ev.target.result);
             const useGeoid = document.getElementById('chkTsUseGeoid').checked;
             const useScale = document.getElementById('chkTsUseScale').checked;
 
@@ -2199,12 +2221,6 @@ function initUi() {
             document.getElementById('btnDownloadT3dCsv').disabled = false;
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
-
-            if (allErrors.length === 0) {
-              showToast('🎉 素晴らしい！観測データ完璧・エラーゼロ（高精度観測お見事です✨）');
-            } else {
-              showToast(`T3DX展開完了: 結線${expanded.lines.length}本, 観測点${o1kRes.points.length}点 (警告${allErrors.length}件)`);
-            }
             zoomToTsBounds();
           } catch (err) {
             console.error(err);
@@ -2214,7 +2230,7 @@ function initUi() {
             btnExecTs.textContent = '🚀 図上自動展開';
           }
         };
-        reader.readAsText(file, 'shift-jis'); // O1KはShift_JIS形式が標準
+        reader.readAsArrayBuffer(file); // 文字コード自動判別 (Shift-JIS / UTF-8)
       } else {
         // T3DC: CSVファイル読み込み
         const fileInput = document.getElementById('tsCsvInput');
@@ -2230,7 +2246,7 @@ function initUi() {
 
         reader.onload = (ev) => {
           try {
-            const csvText = ev.target.result;
+            const csvText = decodeTextAuto(ev.target.result);
             const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
             const csvPoints = [];
 
@@ -2305,7 +2321,7 @@ function initUi() {
             btnExecTs.textContent = '🚀 図上自動展開';
           }
         };
-        reader.readAsText(file, 'shift-jis');
+        reader.readAsArrayBuffer(file);
       }
     });
   }
@@ -5658,7 +5674,7 @@ function handleCsvImport() {
 
   reader.onload = (e) => {
     try {
-      const text = e.target.result;
+      const text = decodeTextAuto(e.target.result);
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
       if (lines.length === 0) {
         alert('CSVファイルが空です。');
@@ -5813,7 +5829,7 @@ function handleCsvImport() {
     }
   };
 
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 
 function generateCsvContent() {
