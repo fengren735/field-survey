@@ -269,7 +269,7 @@
 
     .main-actions-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 8px;
       margin-bottom: 6px;
     }
@@ -908,7 +908,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.3 (2026/11/24 16:08)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.4 (2026/11/24 16:20)</span>
     </div>
   </div>
 
@@ -969,12 +969,9 @@
 
       <!-- 通常時のアクションボタングループ (計測モード時は非表示) -->
       <div id="normalBottomActions">
-        <!-- Quick Move Buttons (Jump to Current Pos / Known Points) -->
+        <!-- Quick Move Buttons (Jump to Known Points) -->
         <div class="main-actions-grid">
-          <button class="btn btn-primary" id="btnMoveToCurrent">
-            🎯 現在地に移動
-          </button>
-          <button class="btn btn-secondary" id="btnMoveToKnown">
+          <button class="btn btn-secondary" id="btnMoveToKnown" style="font-weight:bold;">
             📍 既知点に移動
           </button>
         </div>
@@ -1429,7 +1426,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.7.3 (2026/11/24 16:08)</b>
+              アプリVer: <b id="settingsVerLabel">v1.7.4 (2026/11/24 16:20)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2084,7 +2081,8 @@ function initUi() {
   }
 
   // 移動ボタン
-  document.getElementById('btnMoveToCurrent').addEventListener('click', moveToCurrentPosition);
+  const elMoveToCurrent = document.getElementById('btnMoveToCurrent');
+  if (elMoveToCurrent) elMoveToCurrent.addEventListener('click', moveToCurrentPosition);
   document.getElementById('btnMoveToKnown').addEventListener('click', moveToKnownPoints);
 
   // 点名表示切替 (既知点)
@@ -2777,6 +2775,14 @@ function toggleGps() {
     State.isWatchingGps = false;
     State.watchId = null;
     State.isGsiElevLoading = false;
+    if (gpsMarker) {
+      map.removeLayer(gpsMarker);
+      gpsMarker = null;
+    }
+    if (gpsCircle) {
+      map.removeLayer(gpsCircle);
+      gpsCircle = null;
+    }
     if (elGpsIcon) elGpsIcon.textContent = '📍';
     if (elGpsText) elGpsText.textContent = 'GPS測位開始';
     if (elBtnGps) elBtnGps.classList.remove('active');
@@ -2999,7 +3005,17 @@ function updateCoordinateDisplays() {
 }
 
 function updateMapGpsMarker() {
-  if (!State.currentPosition) return;
+  if (!State.isWatchingGps || !State.currentPosition) {
+    if (gpsMarker) {
+      map.removeLayer(gpsMarker);
+      gpsMarker = null;
+    }
+    if (gpsCircle) {
+      map.removeLayer(gpsCircle);
+      gpsCircle = null;
+    }
+    return;
+  }
   const { lat, lng, accuracy } = State.currentPosition;
 
   if (!gpsMarker) {
