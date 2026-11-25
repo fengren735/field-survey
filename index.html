@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.09 (2026/11/25 22:35)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.10 (2026/11/25 22:50)</span>
     </div>
   </div>
 
@@ -5515,6 +5515,7 @@ function renderTsLayers(expandedData, showText = true) {
 
   const { lines, points } = expandedData;
   State.tsLines = lines || [];
+  State.tsPoints = points || [];
 
   // セッション(塊)の可視性マップ (sessionId -> boolean)
   const sessionVisMap = {};
@@ -6064,55 +6065,111 @@ function clearTsData() {
 // TS観測展開データの AutoCAD R12 (AC1009) DXF エクスポート
 // 黄金の互換性: Jw_cad, AutoCAD, 測量CAD等すべてのCADで100%読み込み可能
 // ==========================================
+// TS観測展開DXF保存 (AutoCAD 2000 / T3DX_T3DC.lsp 完全準拠)
 async function exportTsDxf() {
-  if (!State.tsLines || !State.tsPoints || (State.tsLines.length === 0 && State.tsPoints.length === 0)) {
+  const hasLines = State.tsLines && State.tsLines.length > 0;
+  const hasPoints = State.tsPoints && State.tsPoints.length > 0;
+
+  if (!hasLines && !hasPoints) {
     showToast('DXF出力可能な観測展開データがありません');
     return;
   }
 
   const isSur = State.isSurveyAxis !== false; // デフォルト測量座標系 (X:北, Y:東)
 
-  // レイヤー一覧の収集
-  const layerMap = {};
-  State.tsLines.forEach(l => {
-    const lay = (l.layer || '0').trim();
-    if (!layerMap[lay]) {
-      // 色の割り当て (ACI: 1=赤, 2=黄, 3=緑, 4=水色, 5=青, 6=紫, 7=白/黒, 8=濃灰)
-      let aci = 7;
-      const up = lay.toUpperCase();
-      if (up === 'U' || up.includes('上端')) aci = 3; // 緑
-      else if (up === 'N' || up.includes('中端')) aci = 2; // 黄
-      else if (up === 'S' || up.includes('下端')) aci = 1; // 赤
-      else if (up === 'X' || up.includes('切')) aci = 6; // マゼンタ
-      else if (up === 'K' || up.includes('撹乱')) aci = 8; // グレー
-      else if (up === 'C' || up.includes('調査区')) aci = 5; // 青
-      layerMap[lay] = aci;
-    }
-  });
+  // T3DX_T3DC.lsp 準拠の標準画層・色(ACI)マッピング定義
+  const T3D_LAYER_COLORS = {
+    // 結線画層
+    '上端': 3,          // 緑
+    '中端': 2,          // 黄
+    '下端': 1,          // 赤
+    '切り合い線': 6,      // マゼンタ
+    '撹乱上端': 8,        // 濃灰
+    '調査区上端': 5,      // 青
+    '調査区下端': 5,      // 青
+    'トレンチ上端': 4,    // 水色
+    'トレンチ下端': 4,    // 水色
+    '焼土': 1,          // 赤
+    '硬化面': 2,        // 黄
+    '粘土': 40,         // 茶/橙
+    '灰': 9,            // 明灰
+    '炭化物': 7,        // 白/黒
+    '断面・分層他': 6,    // マゼンタ
+    'その他線': 7,      // 白/黒
+    '検出': 3,          // 緑
+    '上端-掘方': 3,
+    '中端-掘方': 2,
+    '下端-掘方': 1,
+    '焼土-掘方': 1,
+    '硬化面-掘方': 2,
+    '粘土-掘方': 40,
+    '灰-掘方': 9,
+    '炭化物-掘方': 7,
+    '断面・分層他-掘方': 6,
+    // 遺構シンボル・標高点画層
+    'D土器': 12,
+    'D石器': 5,
+    'D石製品': 140,
+    'D土製品': 24,
+    'D礫': 9,
+    'D木製品': 42,
+    'Dガラス製品': 151,
+    'D金属製品': 51,
+    'D骨': 8,
+    'Dその他': 7,
+    'Dセクションポイント': 1,
+    'D基準点': 1,
+    'D標高点': 4,       // 水色
+    'D標高点-掘方': 4,
+    '自由記述': 7,
+    // テキスト・ステーション画層
+    'HTEXT': 4,         // 標高値テキスト (水色)
+    'DTEXT': 31,        // 点名・注記テキスト (橙/黄)
+    'PT_器械点': 1,      // 赤
+    'PT_後視点': 2,      // 黄
+    'エラー点': 1        // 赤
+  };
 
-  // 標準画層
-  if (!layerMap['PT_観測点']) layerMap['PT_観測点'] = 4; // 水色
-  if (!layerMap['PT_器械点']) layerMap['PT_器械点'] = 1; // 赤
-  if (!layerMap['TEXT_点名']) layerMap['TEXT_点名'] = 7; // 白
-  if (!layerMap['TEXT_注記']) layerMap['TEXT_注記'] = 2; // 黄
+  const layerMap = {};
+
+  // 結線画層の収集
+  if (hasLines) {
+    State.tsLines.forEach(l => {
+      const lay = (l.layer || '0').trim();
+      layerMap[lay] = T3D_LAYER_COLORS[lay] || 7;
+    });
+  }
+
+  // 点画層の収集
+  if (hasPoints) {
+    State.tsPoints.forEach(p => {
+      const lay = (p.layer || (p.isElevation ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他'))).trim();
+      layerMap[lay] = T3D_LAYER_COLORS[lay] || 7;
+    });
+  }
+
+  // 標準テキスト・基底画層
+  layerMap['0'] = 7;
+  layerMap['HTEXT'] = 4;
+  layerMap['DTEXT'] = 31;
+  layerMap['PT_器械点'] = 1;
+  layerMap['PT_後視点'] = 2;
 
   const dxfLines = [];
 
-  // 1. HEADER セクション (AutoCAD R12 AC1009)
+  // 1. HEADER セクション (AutoCAD 2000 AC1015 / UTF-8 & ANSI_932 対応)
   dxfLines.push(
     "0", "SECTION",
     "2", "HEADER",
     "9", "$ACADVER",
-    "1", "AC1009",
+    "1", "AC1015",
     "9", "$DWGCODEPAGE",
     "3", "ANSI_932",
     "0", "ENDSEC"
   );
 
-  // 2. TABLES セクション (AutoCAD R12 必須テーブル完備: VPORT, LTYPE, LAYER, STYLE)
-  const userLayers = Object.keys(layerMap).filter(name => name !== '0');
-  const totalLayers = 1 + userLayers.length; // '0' レイヤー + 独自レイヤー
-
+  // 2. TABLES セクション (AutoCAD 必須テーブル完備: VPORT, LTYPE, LAYER, STYLE)
+  const layerNames = Object.keys(layerMap);
   dxfLines.push(
     "0", "SECTION",
     "2", "TABLES",
@@ -6133,10 +6190,14 @@ async function exportTsDxf() {
     "73", "0",
     "40", "0.0",
     "0", "ENDTAB",
-    // 2-3. LAYER テーブル (基底レイヤー '0' を必ず先頭に定義)
+    // 2-3. LAYER テーブル (基底レイヤー '0' を先頭に全画層定義)
     "0", "TABLE",
     "2", "LAYER",
-    "70", String(totalLayers),
+    "70", String(layerNames.length)
+  );
+
+  // 画層 '0' を最優先配置
+  dxfLines.push(
     "0", "LAYER",
     "2", "0",
     "70", "0",
@@ -6144,7 +6205,8 @@ async function exportTsDxf() {
     "6", "CONTINUOUS"
   );
 
-  userLayers.forEach(name => {
+  layerNames.forEach(name => {
+    if (name === '0') return;
     const aci = layerMap[name] || 7;
     dxfLines.push(
       "0", "LAYER",
@@ -6168,17 +6230,32 @@ async function exportTsDxf() {
     "41", "1.0",
     "50", "0.0",
     "71", "0",
-    "42", "2.5",
+    "42", "0.03",
     "3", "txt",
-    "4", "",
     "0", "ENDTAB",
     "0", "ENDSEC"
   );
 
-  // 3. BLOCKS セクション (空)
+  // 3. BLOCKS セクション (AutoCAD 2000 必須: *MODEL_SPACE & *PAPER_SPACE)
   dxfLines.push(
     "0", "SECTION",
     "2", "BLOCKS",
+    "0", "BLOCK",
+    "2", "*MODEL_SPACE",
+    "70", "0",
+    "10", "0.0",
+    "20", "0.0",
+    "30", "0.0",
+    "3", "*MODEL_SPACE",
+    "0", "ENDBLK",
+    "0", "BLOCK",
+    "2", "*PAPER_SPACE",
+    "70", "0",
+    "10", "0.0",
+    "20", "0.0",
+    "30", "0.0",
+    "3", "*PAPER_SPACE",
+    "0", "ENDBLK",
     "0", "ENDSEC"
   );
 
@@ -6198,108 +6275,158 @@ async function exportTsDxf() {
   };
 
   // 4-A. 結線ポリライン (POLYLINE / VERTEX / SEQEND)
-  State.tsLines.forEach(l => {
-    if (!l.points || l.points.length < 2) return;
-    const lay = (l.layer || '0').trim();
-    const isClosed = l.isClosed === true;
+  if (hasLines) {
+    State.tsLines.forEach(l => {
+      if (!l.points || l.points.length < 2) return;
+      const lay = (l.layer || '0').trim();
+      const isClosed = l.isClosed === true;
 
-    dxfLines.push(
-      "0", "POLYLINE",
-      "8", lay,
-      "66", "1",
-      "70", isClosed ? "1" : "0",
-      "10", "0.0",
-      "20", "0.0",
-      "30", "0.0"
-    );
-
-    l.points.forEach(p => {
-      const c = toCadCoord(p);
       dxfLines.push(
-        "0", "VERTEX",
+        "0", "POLYLINE",
         "8", lay,
-        "10", c.x.toFixed(4),
-        "20", c.y.toFixed(4),
-        "30", c.z.toFixed(4)
+        "66", "1",
+        "70", isClosed ? "1" : "0",
+        "10", "0.0",
+        "20", "0.0",
+        "30", "0.0"
       );
-    });
 
-    dxfLines.push(
-      "0", "SEQEND",
-      "8", lay
-    );
-  });
-
-  // 4-B. 観測点 (POINT) & 点名・注記 (TEXT)
-  State.tsPoints.forEach(p => {
-    const c = toCadCoord(p);
-    const ptLay = p.isStation ? 'PT_器械点' : 'PT_観測点';
-
-    // POINT
-    dxfLines.push(
-      "0", "POINT",
-      "8", ptLay,
-      "10", c.x.toFixed(4),
-      "20", c.y.toFixed(4),
-      "30", c.z.toFixed(4)
-    );
-
-    // 点名 TEXT
-    if (p.name) {
-      dxfLines.push(
-        "0", "TEXT",
-        "8", "TEXT_点名",
-        "10", (c.x + 0.35).toFixed(4),
-        "20", (c.y + 0.35).toFixed(4),
-        "30", c.z.toFixed(4),
-        "40", "0.8",
-        "1", String(p.name).replace(/[\r\n]/g, '')
-      );
-    }
-
-    // 注記 TEXT (naiyou がある場合)
-    if (p.naiyou && p.naiyou !== p.name) {
-      dxfLines.push(
-        "0", "TEXT",
-        "8", "TEXT_注記",
-        "10", (c.x + 0.35).toFixed(4),
-        "20", (c.y - 0.65).toFixed(4),
-        "30", c.z.toFixed(4),
-        "40", "0.7",
-        "1", String(p.naiyou).replace(/[\r\n]/g, '')
-      );
-    }
-  });
-
-  // 器械点・後視点マーカーも出力
-  if (State.tsSessions && State.tsSessions.length > 0) {
-    State.tsSessions.forEach(s => {
-      if (s.instPoint) {
-        const c = toCadCoord(s.instPoint);
+      l.points.forEach(p => {
+        const c = toCadCoord(p);
         dxfLines.push(
-          "0", "POINT",
-          "8", "PT_器械点",
+          "0", "VERTEX",
+          "8", lay,
           "10", c.x.toFixed(4),
           "20", c.y.toFixed(4),
-          "30", c.z.toFixed(4),
+          "30", c.z.toFixed(4)
+        );
+      });
+
+      dxfLines.push(
+        "0", "SEQEND",
+        "8", lay
+      );
+
+      // 結線上の注記 (naiyou) があれば DTEXT 画層にプロット (文字高0.03)
+      l.points.forEach(p => {
+        if (p.naiyou) {
+          const c = toCadCoord(p);
+          dxfLines.push(
+            "0", "TEXT",
+            "8", "DTEXT",
+            "10", (c.x + 0.01).toFixed(4),
+            "20", (c.y + 0.01).toFixed(4),
+            "30", c.z.toFixed(4),
+            "40", "0.03",
+            "1", String(p.naiyou).replace(/[\r\n]/g, ''),
+            "7", "STANDARD"
+          );
+        }
+      });
+    });
+  }
+
+  // 4-B. 単独点・標高点 (T3DX_T3DC.lsp 完全互換: 半径0.03mの CIRCLE & HTEXT / DTEXT)
+  if (hasPoints) {
+    State.tsPoints.forEach(p => {
+      const c = toCadCoord(p);
+      const isElev = p.isElevation || (p.rawCode && (p.rawCode.startsWith('0') || p.rawCode.startsWith('-')));
+      const ptLay = p.layer || (isElev ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他'));
+
+      // 1. 点マーカー (半径0.03mの円 CIRCLE)
+      dxfLines.push(
+        "0", "CIRCLE",
+        "8", ptLay,
+        "10", c.x.toFixed(4),
+        "20", c.y.toFixed(4),
+        "30", c.z.toFixed(4),
+        "40", "0.03"
+      );
+
+      // 2. 標高点の場合: HTEXT 画層に標高値を出力 (文字高 0.03, オフセット +0.01, +0.01)
+      if (isElev && typeof p.z === 'number' && !isNaN(p.z)) {
+        dxfLines.push(
           "0", "TEXT",
-          "8", "PT_器械点",
-          "10", (c.x + 0.4).toFixed(4),
-          "20", (c.y + 0.4).toFixed(4),
+          "8", "HTEXT",
+          "10", (c.x + 0.01).toFixed(4),
+          "20", (c.y + 0.01).toFixed(4),
           "30", c.z.toFixed(4),
-          "40", "1.2",
-          "1", `器械点:${s.instPoint.name || ''}`
+          "40", "0.03",
+          "1", p.z.toFixed(3),
+          "7", "STANDARD"
+        );
+      }
+
+      // 3. 点名・注記テキスト: DTEXT 画層に出力 (文字高 0.03)
+      const labelText = p.naiyou || p.name;
+      if (labelText && (!isElev || labelText !== p.z.toFixed(3))) {
+        dxfLines.push(
+          "0", "TEXT",
+          "8", "DTEXT",
+          "10", (c.x + 0.01).toFixed(4),
+          "20", (c.y - 0.04).toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "0.03",
+          "1", String(labelText).replace(/[\r\n]/g, ''),
+          "7", "STANDARD"
         );
       }
     });
   }
 
-  // 4-C. ENDSEC & EOF
+  // 4-C. 器械点・後視点マーカー (CIRCLE & ラベル)
+  if (State.tsSessions && State.tsSessions.length > 0) {
+    State.tsSessions.forEach(s => {
+      // 器械点 (半径 0.05m 赤円)
+      if (s.instPoint) {
+        const c = toCadCoord(s.instPoint);
+        dxfLines.push(
+          "0", "CIRCLE",
+          "8", "PT_器械点",
+          "10", c.x.toFixed(4),
+          "20", c.y.toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "0.05",
+          "0", "TEXT",
+          "8", "PT_器械点",
+          "10", (c.x + 0.06).toFixed(4),
+          "20", (c.y + 0.06).toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "0.05",
+          "1", `器械点:${s.instPoint.name || ''}`,
+          "7", "STANDARD"
+        );
+      }
+      // 後視点 (半径 0.04m 黄円)
+      if (s.bsPoint) {
+        const c = toCadCoord(s.bsPoint);
+        dxfLines.push(
+          "0", "CIRCLE",
+          "8", "PT_後視点",
+          "10", c.x.toFixed(4),
+          "20", c.y.toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "0.04",
+          "0", "TEXT",
+          "8", "PT_後視点",
+          "10", (c.x + 0.05).toFixed(4),
+          "20", (c.y + 0.05).toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "0.04",
+          "1", `後視点:${s.bsPoint.name || ''}`,
+          "7", "STANDARD"
+        );
+      }
+    });
+  }
+
+  // 4-D. ENDSEC & EOF
   dxfLines.push(
     "0", "ENDSEC",
     "0", "EOF"
   );
 
+  // CRLF 改行で結合
   const dxfContent = dxfLines.join('\r\n') + '\r\n';
   const blob = new Blob([dxfContent], { type: 'application/dxf;charset=utf-8' });
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -6312,8 +6439,8 @@ async function exportTsDxf() {
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: 'TS観測展開 DXF (R12完全準拠)',
-          text: `TS観測展開データ (${State.tsLines.length}線, ${State.tsPoints.length}点) のDXFファイルです。`
+          title: 'TS観測展開 DXF (AutoCAD 2000 / T3DC互換)',
+          text: `TS観測展開データ (${State.tsLines ? State.tsLines.length : 0}線, ${State.tsPoints ? State.tsPoints.length : 0}点) のDXFファイルです。`
         });
         showToast('DXFファイルを共有しました');
         return;
@@ -6336,7 +6463,7 @@ async function exportTsDxf() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast(`DXFファイル（R12形式）を保存しました (${filename})`);
+  showToast(`DXFファイル（AutoCAD 2000形式）を保存しました (${filename})`);
 }
 
 // 計算結果T3D CSVダウンロード (AutoLISP完全互換 警告コメント & 対回成果ブロック出力対応)
