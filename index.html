@@ -161,6 +161,368 @@
       animation: gps-pulse-ring 1.8s infinite;
     }
 
+    /* --- 新案2: フローティング・アクションピル & クリーンUI --- */
+    /* 画面上部ステータスピル (スマート現在地バー) */
+    .status-pill-wrap {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .status-pill {
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(203, 213, 225, 0.85);
+      border-radius: 24px;
+      padding: 6px 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      max-width: calc(100vw - 120px);
+    }
+    .status-pill:hover {
+      background: #ffffff;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+      flex-shrink: 0;
+    }
+    .status-dot.active {
+      background: #22c55e;
+      box-shadow: 0 0 6px #22c55e;
+      animation: gps-dot-pulse 1.2s infinite;
+    }
+    .status-zone {
+      font-size: 11px;
+      font-weight: 800;
+      color: #0284c7;
+      background: #e0f2fe;
+      padding: 1px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .status-coord-text {
+      font-size: 11.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status-expand-icon {
+      font-size: 10px;
+      color: #64748b;
+      margin-left: 2px;
+      transition: transform 0.2s;
+    }
+
+    /* ステータス詳細ポップアップ */
+    .status-detail-popup {
+      display: none;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 10px 14px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+      width: 290px;
+      max-width: calc(100vw - 32px);
+      animation: popIn 0.2s ease-out;
+    }
+    .status-detail-popup.show {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* 右側フローティング・アクションピルメニュー */
+    .floating-pill-menu {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .action-pill {
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(203, 213, 225, 0.85);
+      border-radius: 28px;
+      padding: 8px 12px 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      color: #1e293b;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .action-pill:hover {
+      background: #ffffff;
+      transform: scale(1.04) translateX(-2px);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
+    }
+    .action-pill:active {
+      transform: scale(0.96);
+    }
+    .action-pill .pill-icon {
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #f1f5f9;
+    }
+    .action-pill.pill-gps.gps-active {
+      background: #16a34a !important;
+      color: #ffffff !important;
+      border-color: #86efac !important;
+      animation: gps-pulse-ring 1.8s infinite;
+    }
+    .action-pill.pill-gps.gps-active .pill-icon {
+      background: rgba(255, 255, 255, 0.25);
+    }
+    .action-pill.pill-ar {
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+      color: #ffffff;
+      border-color: #38bdf8;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+    }
+    .action-pill.pill-ar .pill-icon {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .action-pill .pill-badge {
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 10px;
+      margin-left: 2px;
+    }
+
+    /* スライドモーダルシート (ハーフモーダル) */
+    .modal-sheet-backdrop {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(4px);
+      z-index: 1100;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .modal-sheet-backdrop.show {
+      display: block;
+      opacity: 1;
+    }
+    .modal-sheet-card {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      max-height: 85vh;
+      background: #ffffff;
+      border-radius: 20px 20px 0 0;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
+      z-index: 1101;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      padding-bottom: calc(var(--safe-bottom) + 12px);
+    }
+    .modal-sheet-backdrop.show .modal-sheet-card {
+      transform: translateY(0);
+    }
+    .modal-sheet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 18px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .modal-sheet-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .modal-sheet-close {
+      background: #f1f5f9;
+      border: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-sheet-close:active {
+      background: #e2e8f0;
+    }
+    .modal-sheet-body {
+      overflow-y: auto;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* --- WebAR カメラ＆DXF重畳ビュー --- */
+    .ar-container {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2000;
+      background: #000000;
+      overflow: hidden;
+    }
+    .ar-container.active {
+      display: block;
+    }
+    .ar-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 2001;
+    }
+    .ar-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2002;
+      pointer-events: none;
+    }
+    .ar-top-bar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      z-index: 2003;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .ar-status-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .ar-status-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .ar-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      white-space: nowrap;
+    }
+    .ar-info-text {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .ar-reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2003;
+      pointer-events: none;
+      width: 44px;
+      height: 44px;
+    }
+    .ar-reticle .reticle-circle {
+      width: 44px;
+      height: 44px;
+      border: 1.5px dashed rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+    }
+    .ar-reticle .reticle-cross {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      background: rgba(0, 240, 255, 0.9);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 6px #00f0ff;
+    }
+    .ar-bottom-controls {
+      position: absolute;
+      bottom: calc(var(--safe-bottom) + 16px);
+      left: 14px;
+      right: 14px;
+      z-index: 2003;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+    .ar-tool-pill {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+
     /* Bottom Controller & Panels */
     .bottom-wrapper {
       position: absolute;
@@ -930,12 +1292,77 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.8.2 (2026/11/25 13:20)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.0 (2026/11/25 14:20)</span>
     </div>
   </div>
 
-  <!-- Quick Floating Controls (Top Left) -->
-  <div class="top-controls">
+  <!-- Top Left: Smart Status Pill (クリーン現在地バー) -->
+  <div class="status-pill-wrap">
+    <div class="status-pill" id="statusPill" title="タップで測位詳細を表示 / 非表示">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-zone" id="dispZoneBadge">第IX系</span>
+      <span class="status-coord-text" id="statusCoordText">GPS待機中 (タップで測位開始)</span>
+      <span class="status-expand-icon" id="statusExpandIcon">▾</span>
+    </div>
+
+    <!-- タップで展開される詳細カード -->
+    <div class="status-detail-popup" id="statusDetailPopup">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
+        <b style="font-size:11px; color:#0369a1;">📍 現在地測位ステータス</b>
+        <span id="gpsLiveBadge" style="display:none; align-items:center; gap:4px; font-size:10px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:12px; padding:1px 6px;">
+          <span style="width:5px; height:5px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span>
+          測位中
+        </span>
+      </div>
+      <div style="font-size:11px; font-family:monospace; color:#475569; display:flex; flex-direction:column; gap:3px;">
+        <div>緯度経度: <span id="dispLatLng" style="color:#0f172a; font-weight:600;">---</span></div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>X(北): <b id="dispValX" style="color:#0f172a;">---</b></span>
+          <span>Y(東): <b id="dispValY" style="color:#0f172a;">---</b></span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>標高(T.P.): <b id="dispHGsi" style="color:#0369a1;">---</b></span>
+          <span>GPS高度: <b id="dispHGps" style="color:#64748b;">---</b></span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:10px; color:#64748b; border-top:1px dashed #e2e8f0; padding-top:3px; margin-top:2px;">
+          <span>精度: <span id="dispAccuracy">---</span></span>
+          <span>縮尺係数: <span id="dispScaleFactor">---</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Floating Action Pills (案2: 直感的な5大機能ピルメニュー) -->
+  <div class="floating-pill-menu" id="floatingPillMenu">
+    <button class="action-pill pill-gps" id="btnPillGps" title="GPS測位開始・現在地に移動">
+      <span class="pill-icon">🎯</span>
+      <span class="pill-label">現在地</span>
+    </button>
+    <button class="action-pill pill-ar" id="btnPillAr" title="カメラDXF重畳 ARビュー">
+      <span class="pill-icon">🥽</span>
+      <span class="pill-label">ARビュー</span>
+    </button>
+    <button class="action-pill" id="btnPillPoints" title="基準点の管理・登録・取込">
+      <span class="pill-icon">📍</span>
+      <span class="pill-label">基準点</span>
+      <span class="pill-badge" id="pillKnownCount">0</span>
+    </button>
+    <button class="action-pill" id="btnPillCadTs" title="DXF図面読込・TS展開">
+      <span class="pill-icon">📁</span>
+      <span class="pill-label">図面・TS</span>
+    </button>
+    <button class="action-pill" id="btnPillMeasure" title="距離・面積・比高計測">
+      <span class="pill-icon">📏</span>
+      <span class="pill-label">現場計測</span>
+    </button>
+    <button class="action-pill" id="btnPillSettings" title="座標系・地図切替・表示設定">
+      <span class="pill-icon">⚙️</span>
+      <span class="pill-label">設定</span>
+    </button>
+  </div>
+
+  <!-- 旧トップコントロール (内部互換用・非表示) -->
+  <div class="top-controls" style="display:none;">
     <button class="btn-icon-map" id="btnRecenter" title="GPS測位開始 / 現在地に移動">🎯</button>
     <button class="btn-icon-map" id="btnToggleLayers" title="地図切替">🗺️</button>
     <button class="btn-icon-map" id="btnToggleKnownNames" title="既知点名 表示切替">🏷️</button>
@@ -944,62 +1371,9 @@
     <button class="btn-icon-map" id="btnToggleArea" title="面積計測">📐</button>
   </div>
 
-  <!-- Bottom Wrapper -->
+  <!-- Bottom Wrapper (計測中のみスマート表示) -->
   <div class="bottom-wrapper">
-    <div class="bottom-bar" id="bottomBar">
-      <div class="pull-handle" id="pullHandle" title="タップまたはスワイプで展開"></div>
-
-      <!-- Quick Coordinate Summary Card (Clean Pro Layout) -->
-      <div class="summary-card" id="summaryCard">
-        <!-- Row 1: LatLng & Detail Indicator -->
-        <div class="summary-header">
-          <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-            <span class="badge-label" id="dispZoneBadge">第IX系</span>
-            <span id="gpsLiveBadge" style="display:none; align-items:center; gap:4px; font-size:10px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:12px; padding:1px 7px; white-space:nowrap;">
-              <span style="width:6px; height:6px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span>
-              測位中
-            </span>
-            <span class="coord-val" id="dispLatLng" style="font-size:11px;">測位待機中...</span>
-          </div>
-          <span style="font-size:10px; color:var(--primary); font-weight:700; white-space:nowrap;" id="btnToggleSheet">詳細 ▾</span>
-        </div>
-
-        <!-- Row 2: Projected XY (2 columns) -->
-        <div class="coord-grid">
-          <div class="coord-cell">
-            <span class="coord-cell-label" id="dispLabelX">X(北):</span>
-            <span class="coord-val" id="dispValX">---</span>
-          </div>
-          <div class="coord-cell">
-            <span class="coord-cell-label" id="dispLabelY">Y(東):</span>
-            <span class="coord-val" id="dispValY">---</span>
-          </div>
-        </div>
-
-        <!-- Row 3: Elevation (2 columns: GSI vs GPS) -->
-        <div class="coord-grid" style="border-top:1px solid #f1f5f9; padding-top:4px;">
-          <div class="coord-cell">
-            <span class="coord-cell-label" style="min-width:52px;">標高(T.P.):</span>
-            <span class="coord-val coord-h-val" id="dispHGsi">---</span>
-          </div>
-          <div class="coord-cell">
-            <span class="coord-cell-label" style="min-width:38px;">GPS H:</span>
-            <span class="coord-val" id="dispHGps">---</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 通常時のアクションボタングループ (計測モード時は非表示) -->
-      <div id="normalBottomActions">
-        <!-- Quick Move Buttons (Jump to Known Points) -->
-        <div class="main-actions-grid">
-          <button class="btn btn-secondary" id="btnMoveToKnown" style="font-weight:bold;">
-            📍 既知点に移動
-          </button>
-        </div>
-
-
-      </div>
+    <div class="bottom-bar" id="bottomBar" style="display:none; border-radius:18px 18px 0 0; padding:10px 14px calc(var(--safe-bottom) + 8px);">
 
       <!-- 計測モード時の専用パネル (計測中のみ下部バーに表示) -->
       <div id="measureBottomPanel" style="display:none; flex-direction:column; gap:6px; margin-top:2px;">
@@ -1068,11 +1442,22 @@
           <button class="btn btn-danger btn-sm" id="btnCloseMeasure" style="flex:1; padding:6px 4px; font-size:11px; font-weight:bold;">✕ 終了</button>
         </div>
       </div>
+    </div>
+  </div>
 
-      <!-- Expandable Sheet Content -->
-      <div class="sheet-content" id="sheetContent">
-        <!-- Tabs -->
-        <div class="tab-bar">
+  <!-- 新スライドモーダルシート (案2: フローティングピル連動ハーフモーダル) -->
+  <div class="modal-sheet-backdrop" id="modalSheetBackdrop">
+    <div class="modal-sheet-card" id="modalSheetCard">
+      <div class="modal-sheet-header">
+        <div class="modal-sheet-title" id="modalSheetTitle">
+          <span id="modalSheetIcon">📍</span>
+          <span id="modalSheetTitleText">基準点の管理</span>
+        </div>
+        <button class="modal-sheet-close" id="btnCloseModalSheet" title="閉じる">✕</button>
+      </div>
+      <div class="modal-sheet-body">
+        <!-- Sub Tabs inside Sheet (ピル選択に応じて動的に切替) -->
+        <div class="tab-bar" id="modalSheetTabBar">
           <div class="tab-item active" data-tab="tab-points">既知点 (<span id="knownCount">0</span>)</div>
           <div class="tab-item" data-tab="tab-csv">既知点取込</div>
           <div class="tab-item" data-tab="tab-dxf">DXF読み込み</div>
@@ -1444,7 +1829,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.8.2 (2026/11/25 13:20)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.0 (2026/11/25 14:20)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1452,6 +1837,54 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- 全画面WebAR カメラ＆DXF・基準点重畳ビュー -->
+  <div id="arContainer" class="ar-container">
+    <video id="arVideo" class="ar-video" autoplay playsinline muted></video>
+    <canvas id="arCanvas" class="ar-canvas"></canvas>
+
+    <!-- AR上部バー -->
+    <div class="ar-top-bar">
+      <div class="ar-status-card">
+        <div class="ar-status-row">
+          <span class="ar-badge" id="arHeadingBadge">🧭 方位: ---°</span>
+          <span class="ar-badge" id="arPitchBadge">📐 仰角: ---°</span>
+          <span class="ar-badge" id="arGpsBadge" style="background:#15803d; color:white;">📍 測位中</span>
+        </div>
+        <div class="ar-info-text" id="arInfoText">DXF図面と基準点を現実空間に投影中</div>
+      </div>
+      <button class="btn btn-danger btn-sm" id="btnCloseAr" style="padding:7px 14px; font-weight:800; font-size:12px; border-radius:20px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+        ✕ 地図に戻る
+      </button>
+    </div>
+
+    <!-- AR中央照準レティクル -->
+    <div class="ar-reticle">
+      <div class="reticle-circle"></div>
+      <div class="reticle-cross"></div>
+    </div>
+
+    <!-- AR下部コントロールバー -->
+    <div class="ar-bottom-controls">
+      <div class="ar-tool-pill">
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; color:#ffffff; font-weight:bold; cursor:pointer;">
+          <input type="checkbox" id="chkArShowDxf" checked> 📐 CAD図面
+        </label>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; color:#ffffff; font-weight:bold; cursor:pointer;">
+          <input type="checkbox" id="chkArShowPoints" checked> ★ 基準点
+        </label>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px; color:#ffffff; font-weight:bold; cursor:pointer;">
+          <input type="checkbox" id="chkArShowLabels" checked> 🏷️ 点名
+        </label>
+      </div>
+      <div class="ar-tool-pill" style="font-size:11px; color:#cbd5e1; gap:8px;">
+        <span>視高調整:</span>
+        <button id="btnArHeightDown" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:11px; border-radius:12px;">▼ -0.2m</button>
+        <span id="arDispHeight" style="font-weight:800; color:#38bdf8; min-width:36px; text-align:center;">1.5m</span>
+        <button id="btnArHeightUp" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:11px; border-radius:12px;">▲ +0.2m</button>
       </div>
     </div>
   </div>
@@ -1615,7 +2048,18 @@ const State = {
   tsShowText: true, // 点名・注記テキストを表示するか
   tsSessions: [], // 観測セット(塊)一覧 [{ id, instName, bsName, color, visible, pointCount, lineCount, instPoint, bsPoint }]
   tsExpandedData: null, // 現在展開中の完全データ保持 (表示/非表示フィルタ用)
-  tsShowStations: true // 器械点・後視点マーカーを地図に表示するか
+  tsShowStations: true, // 器械点・後視点マーカーを地図に表示するか
+  // WebAR (カメラ+DXF/基準点重畳)
+  arActive: false,
+  arHeading: 0,
+  arPitch: 0,
+  arRoll: 0,
+  arHeightOffset: 0, // 視高微調整 (m)
+  arShowDxf: true,
+  arShowPoints: true,
+  arShowLabels: true,
+  arStream: null,
+  arAnimFrameId: null
 };
 
 // 観測セット(塊)の識別カラーパレット
@@ -1928,12 +2372,117 @@ const navLayerGroup = L.layerGroup().addTo(map); // 逆打ち誘導ライン・�
 
 // --- 5. UIの初期化とイベント設定 ---
 function initUi() {
-  // --- A. 基本UIイベントリスナーを最優先で登録 (どんなデータ異常があってもボタンが確実に動くように保証) ---
+  // --- A. 新案2: モーダルシート＆フローティングピル制御 ---
+  window.openModalSheet = (type) => {
+    const backdrop = document.getElementById('modalSheetBackdrop');
+    const titleEl = document.getElementById('modalSheetTitleText');
+    const iconEl = document.getElementById('modalSheetIcon');
+    if (!backdrop) return;
+
+    if (type === 'points') {
+      if (titleEl) titleEl.textContent = '基準点の管理・登録';
+      if (iconEl) iconEl.textContent = '📍';
+      activateTab('tab-points');
+    } else if (type === 'cadts') {
+      if (titleEl) titleEl.textContent = 'CAD図面(DXF) & TS観測展開';
+      if (iconEl) iconEl.textContent = '📁';
+      activateTab('tab-dxf');
+    } else if (type === 'settings') {
+      if (titleEl) titleEl.textContent = '座標系 & アプリ設定';
+      if (iconEl) iconEl.textContent = '⚙️';
+      activateTab('tab-settings');
+    }
+    backdrop.classList.add('show');
+  };
+
+  window.closeModalSheet = () => {
+    const backdrop = document.getElementById('modalSheetBackdrop');
+    if (backdrop) backdrop.classList.remove('show');
+  };
+
+  const btnCloseSheet = document.getElementById('btnCloseModalSheet');
+  if (btnCloseSheet) btnCloseSheet.addEventListener('click', window.closeModalSheet);
+
+  const sheetBackdrop = document.getElementById('modalSheetBackdrop');
+  if (sheetBackdrop) {
+    sheetBackdrop.addEventListener('click', (e) => {
+      if (e.target === sheetBackdrop) window.closeModalSheet();
+    });
+  }
+
+  // ステータスピル (画面上部)
+  const statusPill = document.getElementById('statusPill');
+  const statusDetailPopup = document.getElementById('statusDetailPopup');
+  if (statusPill && statusDetailPopup) {
+    statusPill.addEventListener('click', () => {
+      statusDetailPopup.classList.toggle('show');
+      if (!State.isWatchingGps) {
+        toggleGps();
+      }
+    });
+  }
+
+  // 右側フローティングピルメニュー
+  const elPillGps = document.getElementById('btnPillGps');
+  if (elPillGps) elPillGps.addEventListener('click', onRecenterBtnClick);
+
+  const elPillAr = document.getElementById('btnPillAr');
+  if (elPillAr) elPillAr.addEventListener('click', startArMode);
+
+  const elPillPoints = document.getElementById('btnPillPoints');
+  if (elPillPoints) elPillPoints.addEventListener('click', () => window.openModalSheet('points'));
+
+  const elPillCadTs = document.getElementById('btnPillCadTs');
+  if (elPillCadTs) elPillCadTs.addEventListener('click', () => window.openModalSheet('cadts'));
+
+  const elPillMeasure = document.getElementById('btnPillMeasure');
+  if (elPillMeasure) {
+    elPillMeasure.addEventListener('click', () => {
+      const btnMeasure = document.getElementById('btnToggleMeasure');
+      if (btnMeasure) btnMeasure.click();
+    });
+  }
+
+  const elPillSettings = document.getElementById('btnPillSettings');
+  if (elPillSettings) elPillSettings.addEventListener('click', () => window.openModalSheet('settings'));
+
+  // ARコントロール
+  const btnCloseAr = document.getElementById('btnCloseAr');
+  if (btnCloseAr) btnCloseAr.addEventListener('click', stopArMode);
+
+  const chkArDxf = document.getElementById('chkArShowDxf');
+  if (chkArDxf) chkArDxf.addEventListener('change', (e) => { State.arShowDxf = e.target.checked; });
+
+  const chkArPts = document.getElementById('chkArShowPoints');
+  if (chkArPts) chkArPts.addEventListener('change', (e) => { State.arShowPoints = e.target.checked; });
+
+  const chkArLbls = document.getElementById('chkArShowLabels');
+  if (chkArLbls) chkArLbls.addEventListener('change', (e) => { State.arShowLabels = e.target.checked; });
+
+  const btnArHeightDown = document.getElementById('btnArHeightDown');
+  if (btnArHeightDown) {
+    btnArHeightDown.addEventListener('click', () => {
+      State.arHeightOffset -= 0.2;
+      const el = document.getElementById('arDispHeight');
+      if (el) el.textContent = `${(1.5 + State.arHeightOffset).toFixed(1)}m`;
+    });
+  }
+  const btnArHeightUp = document.getElementById('btnArHeightUp');
+  if (btnArHeightUp) {
+    btnArHeightUp.addEventListener('click', () => {
+      State.arHeightOffset += 0.2;
+      const el = document.getElementById('arDispHeight');
+      if (el) el.textContent = `${(1.5 + State.arHeightOffset).toFixed(1)}m`;
+    });
+  }
+
+  // --- 従来のシート＆タブ互換 ---
   const bottomBar = document.getElementById('bottomBar');
   const toggleSheet = () => {
-    bottomBar.classList.toggle('expanded');
-    const isExpanded = bottomBar.classList.contains('expanded');
-    document.getElementById('btnToggleSheet').textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
+    if (bottomBar) bottomBar.classList.toggle('expanded');
+    const isExpanded = bottomBar && bottomBar.classList.contains('expanded');
+    const btnT = document.getElementById('btnToggleSheet');
+    if (btnT) btnT.textContent = isExpanded ? '閉じる ▴' : '詳細 ▾';
   };
   const pullHandle = document.getElementById('pullHandle');
   if (pullHandle) pullHandle.addEventListener('click', toggleSheet);
@@ -1946,7 +2495,6 @@ function initUi() {
   }
   const summaryCard = document.getElementById('summaryCard');
   if (summaryCard) summaryCard.addEventListener('click', toggleSheet);
-
 
   // タブ切り替え
   document.querySelectorAll('.tab-item').forEach(item => {
@@ -2855,17 +3403,41 @@ function toggleGps() {
 function updateGpsStatusUI() {
   const elLiveBadge = document.getElementById('gpsLiveBadge');
   const elRecenter = document.getElementById('btnRecenter');
+  const elPillGps = document.getElementById('btnPillGps');
+  const statusDot = document.getElementById('statusDot');
+  const statusCoordText = document.getElementById('statusCoordText');
+
+  // 基準点カウントバッジ
+  const pillCount = document.getElementById('pillKnownCount');
+  if (pillCount && State.knownPoints) pillCount.textContent = State.knownPoints.length;
+
   if (!State.isWatchingGps) {
     if (elLiveBadge) elLiveBadge.style.display = 'none';
     if (elRecenter) {
       elRecenter.classList.remove('gps-active');
       elRecenter.title = 'GPS測位開始 / 現在地に移動';
     }
+    if (elPillGps) elPillGps.classList.remove('gps-active');
+    if (statusDot) statusDot.classList.remove('active');
+    if (statusCoordText) statusCoordText.textContent = 'GPS待機中 (タップで測位開始)';
     return;
   }
 
   const p = State.currentPosition;
   const accText = (p && typeof p.accuracy === 'number') ? ` (±${Math.round(p.accuracy)}m)` : '';
+
+  if (elPillGps) {
+    if (State.isGpsFollow) elPillGps.classList.add('gps-active');
+    else elPillGps.classList.remove('gps-active');
+  }
+  if (statusDot) statusDot.classList.add('active');
+  if (p && statusCoordText) {
+    const isSur = State.isSurveyAxis;
+    const xVal = isSur ? p.surveyX : p.mathX;
+    const yVal = isSur ? p.surveyY : p.mathY;
+    const hVal = p.gsiH !== null ? `${p.gsiH.toFixed(2)}m` : (p.gpsH !== null ? `${p.gpsH.toFixed(1)}m` : '---');
+    statusCoordText.textContent = `X: ${xVal.toFixed(1)}, Y: ${yVal.toFixed(1)} | H: ${hVal}${accText}`;
+  }
 
   if (elRecenter) {
     if (State.isGpsFollow) {
@@ -3070,6 +3642,16 @@ function updateCoordinateDisplays() {
   } else {
     document.getElementById('dispHGps').textContent = `---`;
   }
+
+  // 精度と縮尺係数
+  const elAcc = document.getElementById('dispAccuracy');
+  if (elAcc) elAcc.textContent = typeof p.accuracy === 'number' ? `±${p.accuracy.toFixed(1)}m` : '---';
+
+  const elScale = document.getElementById('dispScaleFactor');
+  if (elScale) {
+    const eastDist = isSur ? p.surveyY : p.mathX;
+    elScale.textContent = calcScaleFactor(eastDist).toFixed(6);
+  }
 }
 
 function updateMapGpsMarker() {
@@ -3168,6 +3750,8 @@ function renderKnownPoints() {
 
   const pts = State.knownPoints;
   document.getElementById('knownCount').textContent = pts.length;
+  const pillCount = document.getElementById('pillKnownCount');
+  if (pillCount) pillCount.textContent = pts.length;
   const tsBadge = document.getElementById('tsKnownBadge');
   if (tsBadge) tsBadge.textContent = `${pts.length}点 登録済`;
 
@@ -7044,6 +7628,378 @@ map.on('mouseout', () => {
     hoverSnapMarker = null;
   }
 });
+
+// =================================================================
+// --- 16. WebAR (カメラ映像へのCAD図面(DXF)＆基準点 重畳透視投影) ---
+// =================================================================
+
+// 端末センサーハンドラ (DeviceOrientation)
+function onArDeviceOrientation(e) {
+  // 方位角 (0〜360度, 北=0, 東=90, 南=180, 西=270)
+  let heading = 0;
+  if (typeof e.webkitCompassHeading === 'number') {
+    // iOS Safari
+    heading = e.webkitCompassHeading;
+  } else if (e.alpha !== null) {
+    // Android Chrome (北=360-alpha または absoluteコンパス)
+    heading = (360 - e.alpha) % 360;
+  }
+  State.arHeading = heading;
+
+  // 仰角 (beta: 垂直直立時およそ90度。見上げると>90、見下ろすと<90)
+  const beta = typeof e.beta === 'number' ? e.beta : 90;
+  State.arPitch = beta - 90;
+
+  // ロール角 (gamma: 左右の傾き)
+  State.arRoll = typeof e.gamma === 'number' ? e.gamma : 0;
+
+  // ステータスバッジの更新
+  const elHeading = document.getElementById('arHeadingBadge');
+  if (elHeading) {
+    const cardinals = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+    const cIdx = Math.round(heading / 45) % 8;
+    elHeading.textContent = `🧭 ${Math.round(heading)}° (${cardinals[cIdx]})`;
+  }
+  const elPitch = document.getElementById('arPitchBadge');
+  if (elPitch) {
+    const pVal = Math.round(State.arPitch);
+    elPitch.textContent = `📐 仰角: ${pVal > 0 ? '+' : ''}${pVal}°`;
+  }
+}
+
+// AR Canvas リサイズ
+function resizeArCanvas() {
+  const canvas = document.getElementById('arCanvas');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+}
+
+// AR開始
+async function startArMode() {
+  // 1. GPS測位がOFFなら自動で開始
+  if (!State.isWatchingGps) {
+    showToast('🥽 ARモード起動: GPS測位を自動開始します');
+    toggleGps();
+  }
+
+  // 測位機能の有無チェック
+  if (!navigator.geolocation) {
+    alert('端末の位置情報サービスがサポートされていないため、ARモードを開始できません。');
+    return;
+  }
+
+  // 2. カメラストリーム取得 (背面カメラ)
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('お使いの環境ではカメラ(getUserMedia)がサポートされていないか、HTTPS接続ではありません。');
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    });
+    State.arStream = stream;
+    const video = document.getElementById('arVideo');
+    if (video) {
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      await video.play();
+    }
+  } catch (err) {
+    console.warn('カメラ起動エラー:', err);
+    alert('カメラへのアクセスが拒否されたか、他のアプリで使用中のため起動できませんでした。\nブラウザのカメラ権限を許可してください。');
+    return;
+  }
+
+  // 3. iOS等のセンサー許可要求
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== 'granted') {
+        showToast('方位センサーの権限がありません (方位角は手動固定されます)');
+      }
+    } catch (e) {
+      console.warn('DeviceOrientation permission error:', e);
+    }
+  }
+
+  // 4. イベント登録
+  window.addEventListener('deviceorientation', onArDeviceOrientation, true);
+
+  // 5. AR画面の表示
+  const arContainer = document.getElementById('arContainer');
+  if (arContainer) arContainer.classList.add('active');
+  State.arActive = true;
+
+  // 6. Canvas初期化とレンダリング開始
+  resizeArCanvas();
+  window.addEventListener('resize', resizeArCanvas);
+  if (State.arAnimFrameId) cancelAnimationFrame(State.arAnimFrameId);
+  State.arAnimFrameId = requestAnimationFrame(renderArFrame);
+
+  showToast('🥽 ARモード開始: カメラにCAD図面・基準点を重畳しています');
+}
+
+// AR終了
+function stopArMode() {
+  State.arActive = false;
+  if (State.arAnimFrameId) {
+    cancelAnimationFrame(State.arAnimFrameId);
+    State.arAnimFrameId = null;
+  }
+  window.removeEventListener('deviceorientation', onArDeviceOrientation, true);
+  window.removeEventListener('resize', resizeArCanvas);
+
+  if (State.arStream) {
+    State.arStream.getTracks().forEach(t => t.stop());
+    State.arStream = null;
+  }
+  const video = document.getElementById('arVideo');
+  if (video) video.srcObject = null;
+
+  const arContainer = document.getElementById('arContainer');
+  if (arContainer) arContainer.classList.remove('active');
+
+  showToast('地図画面に戻りました');
+}
+
+// 3次元座標 -> スクリーン透視投影関数
+function projectPointToAr(x, y, z, camX, camY, camZ, headingDeg, pitchDeg, rollDeg, width, height) {
+  const dX = x - camX; // 北
+  const dY = y - camY; // 東
+  const dZ = z - camZ; // 上
+  const distHoriz = Math.hypot(dX, dY);
+  if (distHoriz < 0.2) return null; // 近すぎる点はクリップ
+
+  // 方位角 (北=0, 時計回りラジアン)
+  const az = Math.atan2(dY, dX);
+  const headingRad = (headingDeg * Math.PI) / 180.0;
+  let diffAz = az - headingRad;
+  while (diffAz > Math.PI) diffAz -= 2 * Math.PI;
+  while (diffAz < -Math.PI) diffAz += 2 * Math.PI;
+
+  // 前方視野 (±75度) のみ
+  if (Math.abs(diffAz) > (Math.PI * 75 / 180)) return null;
+
+  // 仰角 (水平=0, 上がプラス)
+  const elev = Math.atan2(dZ, distHoriz);
+  const pitchRad = (pitchDeg * Math.PI) / 180.0;
+  let diffPitch = elev - pitchRad;
+
+  // カメラ視野角 (標準スマホカメラ: 水平約60度, 垂直約45度)
+  const fovH = (60.0 * Math.PI) / 180.0;
+  const fovV = (45.0 * Math.PI) / 180.0;
+
+  const tanH = Math.tan(fovH / 2);
+  const tanV = Math.tan(fovV / 2);
+
+  let sx = (width / 2) + (width / 2) * (Math.tan(diffAz) / tanH);
+  let sy = (height / 2) - (height / 2) * (Math.tan(diffPitch) / tanV);
+
+  // ロール角補正 (端末の左右の傾き)
+  if (rollDeg !== 0) {
+    const rollRad = (rollDeg * Math.PI) / 180.0;
+    const cosR = Math.cos(-rollRad);
+    const sinR = Math.sin(-rollRad);
+    const cx = sx - width / 2;
+    const cy = sy - height / 2;
+    sx = width / 2 + (cx * cosR - cy * sinR);
+    sy = height / 2 + (cx * sinR + cy * cosR);
+  }
+
+  return {
+    x: sx,
+    y: sy,
+    dist: distHoriz,
+    inView: (sx >= -150 && sx <= width + 150 && sy >= -150 && sy <= height + 150)
+  };
+}
+
+// 毎フレームのAR描画ループ
+function renderArFrame() {
+  if (!State.arActive) return;
+
+  const canvas = document.getElementById('arCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  const p = State.currentPosition;
+  const isSur = State.isSurveyAxis;
+
+  // 測位ステータスバッジ
+  const arGpsBadge = document.getElementById('arGpsBadge');
+  const arInfoText = document.getElementById('arInfoText');
+  if (p) {
+    if (arGpsBadge) {
+      arGpsBadge.textContent = `📍 測位中 (±${Math.round(p.accuracy || 0)}m)`;
+      arGpsBadge.style.background = '#15803d';
+    }
+  } else {
+    if (arGpsBadge) {
+      arGpsBadge.textContent = '📍 GPS測位取得待機中...';
+      arGpsBadge.style.background = '#d97706';
+    }
+    // GPS未取得時のガイダンス表示
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+    ctx.fillRect(width / 2 - 160, height / 2 - 40, 320, 80);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(width / 2 - 160, height / 2 - 40, 320, 80);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('📍 GPS現在地を取得しています...', width / 2, height / 2 - 10);
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('空が見通せる場所で端末を水平に向けてください', width / 2, height / 2 + 15);
+    ctx.restore();
+
+    State.arAnimFrameId = requestAnimationFrame(renderArFrame);
+    return;
+  }
+
+  // カメラ視点座標 (測量系: X=北, Y=東)
+  const camX = isSur ? p.surveyX : p.mathX;
+  const camY = isSur ? p.surveyY : p.mathY;
+  // 地表面標高 + 端末保持高さ (1.5m) + ユーザー微調整オフセット
+  const groundElev = (p.gsiH !== null && typeof p.gsiH === 'number') ? p.gsiH : ((p.gpsH !== null && typeof p.gpsH === 'number') ? p.gpsH : 0);
+  const camZ = groundElev + 1.5 + State.arHeightOffset;
+
+  const heading = State.arHeading;
+  const pitch = State.arPitch;
+  const roll = State.arRoll;
+
+  let drawnLinesCount = 0;
+  let drawnPointsCount = 0;
+
+  // --- 1. DXF図面の重畳投影描画 ---
+  if (State.arShowDxf && State.dxfData && State.dxfData.entities) {
+    ctx.save();
+    ctx.lineWidth = 2.5 * (window.devicePixelRatio || 1);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 4;
+
+    const entities = State.dxfData.entities;
+    for (let i = 0; i < entities.length; i++) {
+      const ent = entities[i];
+      // レイヤー非表示ならスキップ
+      if (ent.layer && State.dxfHiddenLayers && State.dxfHiddenLayers[ent.layer]) continue;
+
+      if (ent.type === 'LINE') {
+        const p1 = projectPointToAr(ent.start.x, ent.start.y, ent.start.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+        const p2 = projectPointToAr(ent.end.x, ent.end.y, ent.end.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+        if (p1 && p2 && (p1.inView || p2.inView)) {
+          ctx.strokeStyle = '#00e5ff'; // ネオンシアンで視認性抜群
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+          drawnLinesCount++;
+        }
+      } else if (ent.type === 'POLYLINE' || ent.type === 'LWPOLYLINE') {
+        const vertices = ent.vertices;
+        if (vertices && vertices.length >= 2) {
+          ctx.strokeStyle = '#22c55e'; // ネオングリーン
+          for (let v = 0; v < vertices.length - 1; v++) {
+            const v1 = vertices[v];
+            const v2 = vertices[v + 1];
+            const pt1 = projectPointToAr(v1.x, v1.y, v1.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+            const pt2 = projectPointToAr(v2.x, v2.y, v2.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+            if (pt1 && pt2 && (pt1.inView || pt2.inView)) {
+              ctx.beginPath();
+              ctx.moveTo(pt1.x, pt1.y);
+              ctx.lineTo(pt2.x, pt2.y);
+              ctx.stroke();
+              drawnLinesCount++;
+            }
+          }
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- 2. 基準点（既知点）の重畳投影描画 ---
+  if (State.arShowPoints && State.knownPoints && State.knownPoints.length > 0) {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+
+    for (let k = 0; k < State.knownPoints.length; k++) {
+      const kp = State.knownPoints[k];
+      const ptX = isSur ? kp.x : kp.y;
+      const ptY = isSur ? kp.y : kp.x;
+      const ptZ = (typeof kp.h === 'number') ? kp.h : groundElev;
+
+      const proj = projectPointToAr(ptX, ptY, ptZ, camX, camY, camZ, heading, pitch, roll, width, height);
+      if (proj && proj.inView) {
+        drawnPointsCount++;
+        const isNavTarget = State.navActive && State.navTarget && State.navTarget.id === kp.id;
+
+        // ピンアイコン描画
+        const pinColor = isNavTarget ? '#ea580c' : '#0284c7';
+        ctx.fillStyle = pinColor;
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, 7 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2 * dpr;
+        ctx.stroke();
+
+        // 点名・距離バッジ描画
+        if (State.arShowLabels) {
+          const labelText = `${kp.name || `点 #${k + 1}`} (${proj.dist.toFixed(1)}m)`;
+          ctx.font = `bold ${11 * dpr}px sans-serif`;
+          const textWidth = ctx.measureText(labelText).width;
+
+          // 背景ピル
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+          const padX = 6 * dpr;
+          const padY = 3 * dpr;
+          const rectX = proj.x - (textWidth / 2) - padX;
+          const rectY = proj.y - (22 * dpr);
+          ctx.beginPath();
+          ctx.roundRect(rectX, rectY, textWidth + padX * 2, 16 * dpr, 4 * dpr);
+          ctx.fill();
+          ctx.strokeStyle = isNavTarget ? '#f97316' : '#38bdf8';
+          ctx.lineWidth = 1 * dpr;
+          ctx.stroke();
+
+          // テキスト
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, proj.x, rectY + 8 * dpr);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // ステータステキストの更新
+  if (arInfoText) {
+    const dxfTxt = State.dxfData ? `CAD線: ${drawnLinesCount}本` : 'CAD未読込';
+    const ptTxt = `基準点: ${drawnPointsCount}点表示中`;
+    arInfoText.textContent = `${dxfTxt} | ${ptTxt}`;
+  }
+
+  State.arAnimFrameId = requestAnimationFrame(renderArFrame);
+}
 
 // 起動
 window.addEventListener('DOMContentLoaded', initUi);
