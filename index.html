@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.08 (2026/11/25 22:20)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.09 (2026/11/25 22:35)</span>
     </div>
   </div>
 
@@ -6098,50 +6098,94 @@ async function exportTsDxf() {
 
   const dxfLines = [];
 
-  // 1. HEADER セクション (AC1009 = AutoCAD R12)
+  // 1. HEADER セクション (AutoCAD R12 AC1009)
   dxfLines.push(
-    "  0", "SECTION",
-    "  2", "HEADER",
-    "  9", "$ACADVER",
-    "  1", "AC1009",
-    "  0", "ENDSEC"
+    "0", "SECTION",
+    "2", "HEADER",
+    "9", "$ACADVER",
+    "1", "AC1009",
+    "9", "$DWGCODEPAGE",
+    "3", "ANSI_932",
+    "0", "ENDSEC"
   );
 
-  // 2. TABLES セクション (LAYER テーブル)
-  const layerNames = Object.keys(layerMap);
+  // 2. TABLES セクション (AutoCAD R12 必須テーブル完備: VPORT, LTYPE, LAYER, STYLE)
+  const userLayers = Object.keys(layerMap).filter(name => name !== '0');
+  const totalLayers = 1 + userLayers.length; // '0' レイヤー + 独自レイヤー
+
   dxfLines.push(
-    "  0", "SECTION",
-    "  2", "TABLES",
-    "  0", "TABLE",
-    "  2", "LAYER",
-    " 70", String(layerNames.length)
+    "0", "SECTION",
+    "2", "TABLES",
+    // 2-1. VPORT テーブル
+    "0", "TABLE",
+    "2", "VPORT",
+    "70", "0",
+    "0", "ENDTAB",
+    // 2-2. LTYPE テーブル (CONTINUOUS 実線定義)
+    "0", "TABLE",
+    "2", "LTYPE",
+    "70", "1",
+    "0", "LTYPE",
+    "2", "CONTINUOUS",
+    "70", "0",
+    "3", "Solid line",
+    "72", "65",
+    "73", "0",
+    "40", "0.0",
+    "0", "ENDTAB",
+    // 2-3. LAYER テーブル (基底レイヤー '0' を必ず先頭に定義)
+    "0", "TABLE",
+    "2", "LAYER",
+    "70", String(totalLayers),
+    "0", "LAYER",
+    "2", "0",
+    "70", "0",
+    "62", "7",
+    "6", "CONTINUOUS"
   );
-  layerNames.forEach(name => {
-    const aci = layerMap[name];
+
+  userLayers.forEach(name => {
+    const aci = layerMap[name] || 7;
     dxfLines.push(
-      "  0", "LAYER",
-      "  2", name,
-      " 70", "0",
-      " 62", String(aci),
-      "  6", "CONTINUOUS"
+      "0", "LAYER",
+      "2", name,
+      "70", "0",
+      "62", String(aci),
+      "6", "CONTINUOUS"
     );
   });
+
   dxfLines.push(
-    "  0", "ENDTAB",
-    "  0", "ENDSEC"
+    "0", "ENDTAB",
+    // 2-4. STYLE テーブル (標準文字スタイル STANDARD 定義)
+    "0", "TABLE",
+    "2", "STYLE",
+    "70", "1",
+    "0", "STYLE",
+    "2", "STANDARD",
+    "70", "0",
+    "40", "0.0",
+    "41", "1.0",
+    "50", "0.0",
+    "71", "0",
+    "42", "2.5",
+    "3", "txt",
+    "4", "",
+    "0", "ENDTAB",
+    "0", "ENDSEC"
   );
 
   // 3. BLOCKS セクション (空)
   dxfLines.push(
-    "  0", "SECTION",
-    "  2", "BLOCKS",
-    "  0", "ENDSEC"
+    "0", "SECTION",
+    "2", "BLOCKS",
+    "0", "ENDSEC"
   );
 
   // 4. ENTITIES セクション
   dxfLines.push(
-    "  0", "SECTION",
-    "  2", "ENTITIES"
+    "0", "SECTION",
+    "2", "ENTITIES"
   );
 
   // 座標マッピング関数:
@@ -6160,29 +6204,29 @@ async function exportTsDxf() {
     const isClosed = l.isClosed === true;
 
     dxfLines.push(
-      "  0", "POLYLINE",
-      "  8", lay,
-      " 66", "1",
-      " 70", isClosed ? "1" : "0",
-      " 10", "0.0",
-      " 20", "0.0",
-      " 30", "0.0"
+      "0", "POLYLINE",
+      "8", lay,
+      "66", "1",
+      "70", isClosed ? "1" : "0",
+      "10", "0.0",
+      "20", "0.0",
+      "30", "0.0"
     );
 
     l.points.forEach(p => {
       const c = toCadCoord(p);
       dxfLines.push(
-        "  0", "VERTEX",
-        "  8", lay,
-        " 10", c.x.toFixed(4),
-        " 20", c.y.toFixed(4),
-        " 30", c.z.toFixed(4)
+        "0", "VERTEX",
+        "8", lay,
+        "10", c.x.toFixed(4),
+        "20", c.y.toFixed(4),
+        "30", c.z.toFixed(4)
       );
     });
 
     dxfLines.push(
-      "  0", "SEQEND",
-      "  8", lay
+      "0", "SEQEND",
+      "8", lay
     );
   });
 
@@ -6193,36 +6237,36 @@ async function exportTsDxf() {
 
     // POINT
     dxfLines.push(
-      "  0", "POINT",
-      "  8", ptLay,
-      " 10", c.x.toFixed(4),
-      " 20", c.y.toFixed(4),
-      " 30", c.z.toFixed(4)
+      "0", "POINT",
+      "8", ptLay,
+      "10", c.x.toFixed(4),
+      "20", c.y.toFixed(4),
+      "30", c.z.toFixed(4)
     );
 
     // 点名 TEXT
     if (p.name) {
       dxfLines.push(
-        "  0", "TEXT",
-        "  8", "TEXT_点名",
-        " 10", (c.x + 0.35).toFixed(4),
-        " 20", (c.y + 0.35).toFixed(4),
-        " 30", c.z.toFixed(4),
-        " 40", "0.8",
-        "  1", String(p.name).replace(/[\r\n]/g, '')
+        "0", "TEXT",
+        "8", "TEXT_点名",
+        "10", (c.x + 0.35).toFixed(4),
+        "20", (c.y + 0.35).toFixed(4),
+        "30", c.z.toFixed(4),
+        "40", "0.8",
+        "1", String(p.name).replace(/[\r\n]/g, '')
       );
     }
 
     // 注記 TEXT (naiyou がある場合)
     if (p.naiyou && p.naiyou !== p.name) {
       dxfLines.push(
-        "  0", "TEXT",
-        "  8", "TEXT_注記",
-        " 10", (c.x + 0.35).toFixed(4),
-        " 20", (c.y - 0.65).toFixed(4),
-        " 30", c.z.toFixed(4),
-        " 40", "0.7",
-        "  1", String(p.naiyou).replace(/[\r\n]/g, '')
+        "0", "TEXT",
+        "8", "TEXT_注記",
+        "10", (c.x + 0.35).toFixed(4),
+        "20", (c.y - 0.65).toFixed(4),
+        "30", c.z.toFixed(4),
+        "40", "0.7",
+        "1", String(p.naiyou).replace(/[\r\n]/g, '')
       );
     }
   });
@@ -6233,31 +6277,30 @@ async function exportTsDxf() {
       if (s.instPoint) {
         const c = toCadCoord(s.instPoint);
         dxfLines.push(
-          "  0", "POINT",
-          "  8", "PT_器械点",
-          " 10", c.x.toFixed(4),
-          " 20", c.y.toFixed(4),
-          " 30", c.z.toFixed(4),
-          "  0", "TEXT",
-          "  8", "PT_器械点",
-          " 10", (c.x + 0.4).toFixed(4),
-          " 20", (c.y + 0.4).toFixed(4),
-          " 30", c.z.toFixed(4),
-          " 40", "1.2",
-          "  1", `器械点:${s.instName || ''}`
+          "0", "POINT",
+          "8", "PT_器械点",
+          "10", c.x.toFixed(4),
+          "20", c.y.toFixed(4),
+          "30", c.z.toFixed(4),
+          "0", "TEXT",
+          "8", "PT_器械点",
+          "10", (c.x + 0.4).toFixed(4),
+          "20", (c.y + 0.4).toFixed(4),
+          "30", c.z.toFixed(4),
+          "40", "1.2",
+          "1", `器械点:${s.instPoint.name || ''}`
         );
       }
     });
   }
 
-  // 終了
+  // 4-C. ENDSEC & EOF
   dxfLines.push(
-    "  0", "ENDSEC",
-    "  0", "EOF",
-    ""
+    "0", "ENDSEC",
+    "0", "EOF"
   );
 
-  const dxfContent = dxfLines.join("\r\n");
+  const dxfContent = dxfLines.join('\r\n') + '\r\n';
   const blob = new Blob([dxfContent], { type: 'application/dxf;charset=utf-8' });
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = `ts_survey_data_${dateStr}.dxf`;
@@ -6269,7 +6312,7 @@ async function exportTsDxf() {
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: 'TS観測展開 DXF (R12)',
+          title: 'TS観測展開 DXF (R12完全準拠)',
           text: `TS観測展開データ (${State.tsLines.length}線, ${State.tsPoints.length}点) のDXFファイルです。`
         });
         showToast('DXFファイルを共有しました');
