@@ -930,7 +930,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.8.1 (2026/11/25 13:15)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.8.2 (2026/11/25 13:20)</span>
     </div>
   </div>
 
@@ -1128,9 +1128,8 @@
               </div>
             </div>
 
-            <div style="font-size:11px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:4px 8px; margin-top:2px; margin-bottom:6px; display:flex; justify-content:space-between; color:#475569;">
-              <span>📐 縮尺係数: <b id="inlineDispScale" style="color:#0369a1;">---</b></span>
-              <span>🌐 ジオイド高: <b style="color:#047857;">登録後自動取得</b></span>
+            <div style="font-size:11px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:4px 8px; margin-top:2px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; color:#475569;">
+              <span>📐 縮尺係数 (自動計算): <b id="inlineDispScale" style="color:#0369a1;">---</b></span>
             </div>
 
             <button class="btn btn-primary btn-sm" id="btnInlineSavePoint" style="width:100%; padding:8px; font-size:12px; margin-top:2px;">
@@ -1445,7 +1444,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.8.1 (2026/11/25 13:15)</b>
+              アプリVer: <b id="settingsVerLabel">v1.8.2 (2026/11/25 13:20)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -4102,62 +4101,21 @@ async function processGeoidQueue() {
   isGeoidProcessing = false;
 }
 
-// 既知点リストの縮尺係数・ジオイド高の裏（バックグラウンド）順次取得
-let isBgGeoidRunning = false;
+// 既知点リストの縮尺係数補完 (ジオイド高API自動取得は成果差異・混乱防止のため完全停止)
 async function startBackgroundGeoidFetch() {
-  if (isBgGeoidRunning || !State.knownPoints || State.knownPoints.length === 0) return;
-
-  const targetPts = State.knownPoints.filter(p => typeof p.geoid !== 'number' || isNaN(p.geoid));
-  isBgGeoidRunning = true;
-  if (targetPts.length > 0) {
-    showToast(`既知点（${targetPts.length}点）のジオイド高を自動取得中...`);
-  }
-
-  try {
-    for (const pt of State.knownPoints) {
-      const ptZone = pt.zoneId || State.currentZoneId;
-      // 縮尺係数が無ければ計算補完 (中央子午線離れYに基づく)
-      if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
-        const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
-        pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
-        savePoints();
-        renderKnownPoints();
-      }
-      // ジオイド高が未設定ならAPIキューに投入して順次取得 (1.3秒間隔で安心・安全に取得)
-      if (typeof pt.geoid !== 'number' || isNaN(pt.geoid)) {
-        let lat = pt.lat;
-        let lng = pt.lng;
-        if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
-          const ll = xyToLatLng(pt.x, pt.y, ptZone, pt.isSurveySaved !== false);
-          if (ll) { lat = ll.lat; lng = ll.lng; pt.lat = lat; pt.lng = lng; }
-        }
-        if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
-          const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
-          if (geoidCache[key] !== undefined && geoidCache[key] !== null) {
-            pt.geoid = geoidCache[key];
-            savePoints();
-            renderKnownPoints();
-          } else {
-            const g = await fetchGsiGeoid(lat, lng);
-            if (typeof g === 'number' && !isNaN(g)) {
-              pt.geoid = g;
-              geoidCache[key] = g;
-              savePoints();
-              renderKnownPoints();
-            }
-          }
-        }
-      }
+  if (!State.knownPoints || State.knownPoints.length === 0) return;
+  let needsSave = false;
+  for (const pt of State.knownPoints) {
+    // 縮尺係数が無ければ計算補完 (中央子午線離れYに基づく)
+    if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
+      const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
+      pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
+      needsSave = true;
     }
+  }
+  if (needsSave) {
     savePoints();
     renderKnownPoints();
-    if (targetPts.length > 0) {
-      showToast('既知点のジオイド高の自動取得が完了しました');
-    }
-  } catch (e) {
-    console.warn('バックグラウンドジオイド高取得エラー:', e);
-  } finally {
-    isBgGeoidRunning = false;
   }
 }
 
@@ -6229,7 +6187,7 @@ function openKnownModal(pt = null) {
       elScale.textContent = (typeof sVal === 'number' && !isNaN(sVal)) ? sVal.toFixed(6) : '---';
     }
     if (elGeoid) {
-      elGeoid.textContent = (typeof pt.geoid === 'number') ? `${pt.geoid} m` : '保存時に自動取得';
+      elGeoid.textContent = (typeof pt.geoid === 'number') ? `${pt.geoid} m` : '---';
     }
   } else {
     title.textContent = '既知点の追加';
@@ -6240,7 +6198,7 @@ function openKnownModal(pt = null) {
     pH.value = '';
     pZone.value = State.currentZoneId;
     if (elScale) elScale.textContent = '保存時に自動計算';
-    if (elGeoid) elGeoid.textContent = '保存時に自動取得';
+    if (elGeoid) elGeoid.textContent = '---';
   }
 
   updateAxisLabels();
