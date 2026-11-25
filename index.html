@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.06 (2026/11/25 21:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.07 (2026/11/25 22:05)</span>
     </div>
   </div>
 
@@ -3648,7 +3648,7 @@ function renderKnownPoints() {
             Y: ${formatCoord(pt.y, 3)} m<br>
             H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? formatCoord(pt.h, 3) + ' m' : '---'}<br>
             ${typeof pt.scale === 'number' ? `縮尺係数: ${pt.scale.toFixed(6)}<br>` : ''}
-            ${typeof pt.geoid === 'number' ? `ジオイド高: ${pt.geoid.toFixed(4)} m<br>` : ''}
+            ${typeof pt.geoid === 'number' ? `ジオイド高: ${pt.geoid.toFixed(3)} m<br>` : ''}
           </div>
           <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
           <div style="margin-top:6px; display:flex; gap:4px;">
@@ -3675,7 +3675,7 @@ function renderKnownPoints() {
         <div class="point-coords">
           X: ${formatCoord(pt.x, 3)}, Y: ${formatCoord(pt.y, 3)}${pt.h !== '' && pt.h !== null ? `, H: ${formatCoord(pt.h, 2)}` : ''}
           ${typeof pt.scale === 'number' ? `<span style="margin-left:4px; background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:10px; color:#475569; font-weight:600;">縮尺:${pt.scale.toFixed(6)}</span>` : ''}
-          ${typeof pt.geoid === 'number' ? `<span style="margin-left:4px; background:#ecfdf5; padding:1px 5px; border-radius:3px; font-size:10px; color:#047857; font-weight:600;">ジオイド:${pt.geoid.toFixed(4)}m</span>` : ''}
+          ${typeof pt.geoid === 'number' ? `<span style="margin-left:4px; background:#ecfdf5; padding:1px 5px; border-radius:3px; font-size:10px; color:#047857; font-weight:600;">ジオイド:${pt.geoid.toFixed(3)}m</span>` : ''}
         </div>
       </div>
       <div class="point-actions">
@@ -6824,7 +6824,7 @@ function openKnownModal(pt = null) {
       elScale.textContent = (typeof sVal === 'number' && !isNaN(sVal)) ? sVal.toFixed(6) : '---';
     }
     if (elGeoid) {
-      elGeoid.textContent = (typeof pt.geoid === 'number') ? `${pt.geoid} m` : '---';
+      elGeoid.textContent = (typeof pt.geoid === 'number') ? `${pt.geoid.toFixed(3)} m` : '---';
     }
   } else {
     title.textContent = '既知点の追加';
@@ -7384,8 +7384,8 @@ function generateCsvContent() {
       pt.x,
       pt.y,
       pt.h !== null && pt.h !== undefined ? pt.h : '',
-      pt.scale !== null && pt.scale !== undefined ? pt.scale : '',
-      pt.geoid !== null && pt.geoid !== undefined ? pt.geoid : '',
+      pt.scale !== null && pt.scale !== undefined ? (typeof pt.scale === 'number' ? pt.scale.toFixed(6) : pt.scale) : '',
+      pt.geoid !== null && pt.geoid !== undefined ? (typeof pt.geoid === 'number' ? pt.geoid.toFixed(3) : pt.geoid) : '',
       pt.zoneId || State.currentZoneId
     ].join(',');
     content += row + "\n";
