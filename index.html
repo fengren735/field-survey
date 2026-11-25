@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.13 (2026/11/25 23:30)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.14 (2026/11/25 23:40)</span>
     </div>
   </div>
 
@@ -6166,6 +6166,12 @@ async function exportTsDxf() {
 
   const isSur = State.isSurveyAxis !== false; // デフォルト測量座標系 (X:北, Y:東)
 
+  // AutoCAD DXF画層名サニタイズ (中黒・スラッシュなどCAD禁止文字を安全な_に置換)
+  const sanitizeLayerName = (name) => {
+    if (!name) return '0';
+    return String(name).trim().replace(/[・\s\/\\:;\?\*\|=\<\>\(\)\[\]]/g, '_');
+  };
+
   // T3DX_T3DC.lsp 準拠の標準画層・色(ACI)マッピング定義
   const T3D_LAYER_COLORS = {
     // 結線画層
@@ -6183,7 +6189,8 @@ async function exportTsDxf() {
     '粘土': 40,         // 茶/橙
     '灰': 9,            // 明灰
     '炭化物': 7,        // 白/黒
-    '断面・分層他': 6,    // マゼンタ
+    '断面_分層他': 6,    // マゼンタ (中黒サニタイズ)
+    '断面・分層他': 6,
     'その他線': 7,      // 白/黒
     '検出': 3,          // 緑
     '上端-掘方': 3,
@@ -6194,6 +6201,7 @@ async function exportTsDxf() {
     '粘土-掘方': 40,
     '灰-掘方': 9,
     '炭化物-掘方': 7,
+    '断面_分層他-掘方': 6,
     '断面・分層他-掘方': 6,
     // 遺構シンボル・標高点画層
     'D土器': 12,
@@ -6221,19 +6229,20 @@ async function exportTsDxf() {
 
   const layerMap = {};
 
-  // 結線画層の収集
+  // 結線画層の収集 (安全サニタイズ)
   if (hasLines) {
     State.tsLines.forEach(l => {
-      const lay = (l.layer || '0').trim();
-      layerMap[lay] = T3D_LAYER_COLORS[lay] || 7;
+      const lay = sanitizeLayerName(l.layer);
+      layerMap[lay] = T3D_LAYER_COLORS[lay] || T3D_LAYER_COLORS[l.layer] || 7;
     });
   }
 
-  // 点画層の収集
+  // 点画層の収集 (安全サニタイズ)
   if (hasPoints) {
     State.tsPoints.forEach(p => {
-      const lay = (p.layer || (p.isElevation ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他'))).trim();
-      layerMap[lay] = T3D_LAYER_COLORS[lay] || 7;
+      const rawLay = p.layer || (p.isElevation ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他'));
+      const lay = sanitizeLayerName(rawLay);
+      layerMap[lay] = T3D_LAYER_COLORS[lay] || T3D_LAYER_COLORS[rawLay] || 7;
     });
   }
 
@@ -6349,7 +6358,7 @@ async function exportTsDxf() {
   if (hasLines) {
     State.tsLines.forEach(l => {
       if (!l.points || l.points.length < 2) return;
-      const lay = (l.layer || '0').trim();
+      const lay = sanitizeLayerName(l.layer);
       const isClosed = l.isClosed === true;
 
       dxfLines.push(
@@ -6401,7 +6410,7 @@ async function exportTsDxf() {
     State.tsPoints.forEach(p => {
       const c = toCadCoord(p);
       const isElev = p.isElevation || (p.rawCode && (p.rawCode.startsWith('0') || p.rawCode.startsWith('-')));
-      const ptLay = p.layer || (isElev ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他'));
+      const ptLay = sanitizeLayerName(p.layer || (isElev ? 'D標高点' : (p.isError ? 'エラー点' : 'Dその他')));
 
       // 1. 点マーカー (半径0.03mの円 CIRCLE)
       dxfLines.push(
