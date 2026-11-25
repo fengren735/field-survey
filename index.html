@@ -79,10 +79,10 @@
       -ms-interpolation-mode: nearest-neighbor !important;   /* IE/Edge */
     }
 
-    /* Custom attribution badge */
+    /* Custom attribution badge (画面右下に配置) */
     .attribution-badge {
       position: absolute;
-      top: 10px;
+      bottom: calc(var(--safe-bottom) + 8px);
       right: 10px;
       z-index: 900; /* パネルより奥に配置 */
       background: rgba(255, 255, 255, 0.88);
@@ -247,16 +247,16 @@
       gap: 6px;
     }
 
-    /* 右側フローティング・アクションピルメニュー */
+    /* 左側フローティング・アクションピルメニュー */
     .floating-pill-menu {
       position: absolute;
-      right: 12px;
+      left: 12px;
       top: 50%;
       transform: translateY(-50%);
       z-index: 1000;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 5px; /* 上下間隔を従来の半分(5px)に集約 */
       pointer-events: none;
     }
     .action-pill {
@@ -265,7 +265,7 @@
       backdrop-filter: blur(10px);
       border: 1px solid rgba(203, 213, 225, 0.85);
       border-radius: 28px;
-      padding: 8px 12px 8px 10px;
+      padding: 6px 12px 6px 9px;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -279,7 +279,7 @@
     }
     .action-pill:hover {
       background: #ffffff;
-      transform: scale(1.04) translateX(-2px);
+      transform: scale(1.04) translateX(2px);
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
     }
     .action-pill:active {
@@ -1164,11 +1164,11 @@
     </div>
   </div>
 
-  <!-- Custom Attribution at Top-Right Corner -->
+  <!-- Custom Attribution at Bottom-Right Corner (国土地理院ライセンス＆バージョン表示) -->
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.7 (2026/11/25 16:00)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.8 (2026/11/25 16:10)</span>
     </div>
   </div>
 
@@ -1208,7 +1208,7 @@
     </div>
   </div>
 
-  <!-- Right Floating Action Pills (案2: 直感的な5大機能ピルメニュー) -->
+  <!-- Left Floating Action Pills (直感的な5大機能ピルメニュー) -->
   <div class="floating-pill-menu" id="floatingPillMenu">
     <button class="action-pill pill-gps" id="btnPillGps" title="GPS測位開始・現在地に移動">
       <span class="pill-icon">🎯</span>
@@ -1701,7 +1701,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.9.7 (2026/11/25 16:00)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.8 (2026/11/25 16:10)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
