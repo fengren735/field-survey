@@ -312,14 +312,14 @@
     .action-pill.pill-gps.gps-active .pill-icon {
       background: rgba(255, 255, 255, 0.25);
     }
-    .action-pill.pill-ar {
-      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
-      color: #ffffff;
-      border-color: #38bdf8;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+    .action-pill.pill-ar.ar-active {
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+      color: #ffffff !important;
+      border-color: #38bdf8 !important;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35) !important;
     }
-    .action-pill.pill-ar .pill-icon {
-      background: rgba(255, 255, 255, 0.2);
+    .action-pill.pill-ar.ar-active .pill-icon {
+      background: rgba(255, 255, 255, 0.25) !important;
     }
     .action-pill .pill-badge {
       background: #e2e8f0;
@@ -1300,7 +1300,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.2 (2026/11/25 14:40)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.3 (2026/11/25 14:48)</span>
     </div>
   </div>
 
@@ -1837,7 +1837,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.9.2 (2026/11/25 14:40)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.3 (2026/11/25 14:48)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1858,7 +1858,7 @@
     <div class="ar-top-bar">
       <div class="ar-status-card">
         <div class="ar-status-row">
-          <span class="ar-badge" id="arHeadingBadge">🧭 方位: ---°</span>
+          <span class="ar-badge" id="arHeadingBadge" style="cursor:pointer;" title="タップで地磁気センサー(8の字)校正ガイド">🧭 方位: ---°</span>
           <span class="ar-badge" id="arPitchBadge">📐 仰角: ---°</span>
           <span class="ar-badge" id="arGpsBadge" style="background:#15803d; color:white;">📍 測位中</span>
         </div>
@@ -1888,6 +1888,19 @@
           <input type="checkbox" id="chkArShowLabels" checked> 🏷️ 点名
         </label>
       </div>
+
+      <!-- 方位キャリブレーション & 微調整ツールピル -->
+      <div class="ar-tool-pill" style="font-size:11px; color:#cbd5e1; gap:4px; flex-wrap:wrap; justify-content:center;">
+        <span style="font-weight:bold; color:#fde047;">🧭 方位補正:</span>
+        <button id="btnArHeadingMinus5" class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:10px; border-radius:10px;" title="左へ5度補正">◀◀ -5°</button>
+        <button id="btnArHeadingMinus1" class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:10px; border-radius:10px;" title="左へ1度補正">◀ -1°</button>
+        <span id="arDispHeadingOffset" style="font-weight:800; color:#fde047; min-width:44px; text-align:center; font-family:monospace;">±0.0°</span>
+        <button id="btnArHeadingPlus1" class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:10px; border-radius:10px;" title="右へ1度補正">+1° ▶</button>
+        <button id="btnArHeadingPlus5" class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:10px; border-radius:10px;" title="右へ5度補正">+5° ▶▶</button>
+        <button id="btnArHeadingReset" class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:10px; border-radius:10px; color:#94a3b8;" title="補正リセット">0°</button>
+        <button id="btnArCalibrateByPoint" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:10.5px; border-radius:10px; background:#0284c7; color:#ffffff; border-color:#38bdf8; font-weight:bold; margin-left:4px;" title="照準方向の基準点に方位を自動一致">🎯 照準点に合わせる</button>
+      </div>
+
       <div class="ar-tool-pill" style="font-size:11px; color:#cbd5e1; gap:8px;">
         <span>視高調整:</span>
         <button id="btnArHeightDown" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:11px; border-radius:12px;">▼ -0.2m</button>
@@ -2060,6 +2073,8 @@ const State = {
   // WebAR (カメラ+DXF/基準点重畳)
   arActive: false,
   arHeading: 0,
+  arRawHeading: 0, // 端末センサーの生方位角
+  arHeadingOffset: 0, // 方位角キャリブレーション補正オフセット (度)
   arPitch: 0,
   arRoll: 0,
   arHeightOffset: 0, // 視高微調整 (m)
@@ -2480,6 +2495,38 @@ function initUi() {
       State.arHeightOffset += 0.2;
       const el = document.getElementById('arDispHeight');
       if (el) el.textContent = `${(1.5 + State.arHeightOffset).toFixed(1)}m`;
+    });
+  }
+
+  // AR方位角キャリブレーション & 微調整
+  function updateArHeadingOffsetUI() {
+    const el = document.getElementById('arDispHeadingOffset');
+    if (el) {
+      const sign = State.arHeadingOffset > 0 ? '+' : (State.arHeadingOffset < 0 ? '' : '±');
+      el.textContent = `${sign}${State.arHeadingOffset.toFixed(1)}°`;
+    }
+    State.arHeading = ((State.arRawHeading + State.arHeadingOffset) % 360 + 360) % 360;
+  }
+  window.updateArHeadingOffsetUI = updateArHeadingOffsetUI;
+
+  const btnArHMinus5 = document.getElementById('btnArHeadingMinus5');
+  if (btnArHMinus5) btnArHMinus5.addEventListener('click', () => { State.arHeadingOffset -= 5.0; updateArHeadingOffsetUI(); });
+  const btnArHMinus1 = document.getElementById('btnArHeadingMinus1');
+  if (btnArHMinus1) btnArHMinus1.addEventListener('click', () => { State.arHeadingOffset -= 1.0; updateArHeadingOffsetUI(); });
+  const btnArHPlus1 = document.getElementById('btnArHeadingPlus1');
+  if (btnArHPlus1) btnArHPlus1.addEventListener('click', () => { State.arHeadingOffset += 1.0; updateArHeadingOffsetUI(); });
+  const btnArHPlus5 = document.getElementById('btnArHeadingPlus5');
+  if (btnArHPlus5) btnArHPlus5.addEventListener('click', () => { State.arHeadingOffset += 5.0; updateArHeadingOffsetUI(); });
+  const btnArHReset = document.getElementById('btnArHeadingReset');
+  if (btnArHReset) btnArHReset.addEventListener('click', () => { State.arHeadingOffset = 0.0; updateArHeadingOffsetUI(); showToast('方位補正をリセットしました (0°)'); });
+
+  const btnArCalib = document.getElementById('btnArCalibrateByPoint');
+  if (btnArCalib) btnArCalib.addEventListener('click', calibrateArHeadingToTarget);
+
+  const elArHeadBadge = document.getElementById('arHeadingBadge');
+  if (elArHeadBadge) {
+    elArHeadBadge.addEventListener('click', () => {
+      showToast('🧭 【地磁気校正】スマホを空中で大きく「8の字」に数回回すと方位センサーの精度が向上します');
     });
   }
 
@@ -7683,7 +7730,9 @@ function onArDeviceOrientation(e) {
     // Android Chrome (北=360-alpha または absoluteコンパス)
     heading = (360 - e.alpha) % 360;
   }
-  State.arHeading = heading;
+  State.arRawHeading = heading;
+  // キャリブレーション補正オフセットを適用
+  State.arHeading = ((heading + State.arHeadingOffset) % 360 + 360) % 360;
 
   // 仰角 (beta: 垂直直立時およそ90度。見上げると>90、見下ろすと<90)
   const beta = typeof e.beta === 'number' ? e.beta : 90;
@@ -7696,8 +7745,9 @@ function onArDeviceOrientation(e) {
   const elHeading = document.getElementById('arHeadingBadge');
   if (elHeading) {
     const cardinals = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
-    const cIdx = Math.round(heading / 45) % 8;
-    elHeading.textContent = `🧭 ${Math.round(heading)}° (${cardinals[cIdx]})`;
+    const cIdx = Math.round(State.arHeading / 45) % 8;
+    const offsetStr = State.arHeadingOffset !== 0 ? ` (補正 ${State.arHeadingOffset > 0 ? '+' : ''}${State.arHeadingOffset.toFixed(1)}°)` : '';
+    elHeading.textContent = `🧭 ${Math.round(State.arHeading)}° (${cardinals[cIdx]})${offsetStr}`;
   }
   const elPitch = document.getElementById('arPitchBadge');
   if (elPitch) {
@@ -7705,6 +7755,74 @@ function onArDeviceOrientation(e) {
     elPitch.textContent = `📐 仰角: ${pVal > 0 ? '+' : ''}${pVal}°`;
   }
 }
+
+// 基準点への理論方位にAR方位を自動校正（キャリブレーション）
+function calibrateArHeadingToTarget() {
+  if (!State.currentPosition) {
+    alert('現在地が測位されていないため、基準点への理論方位を計算できません。\nGPS測位が完了するまでお待ちください。');
+    return;
+  }
+  const isSur = State.isSurveyAxis;
+  const p = State.currentPosition;
+  const camX = isSur ? p.surveyX : p.mathX;
+  const camY = isSur ? p.surveyY : p.mathY;
+
+  // 比較候補の基準点
+  const candidates = [];
+  if (State.knownPoints && State.knownPoints.length > 0) {
+    State.knownPoints.forEach(kp => {
+      if (kp.lat !== null && kp.lng !== null) {
+        const xy = latLngToXY(kp.lat, kp.lng, State.currentZoneId, isSur);
+        if (xy) {
+          candidates.push({ name: kp.name || '基準点', x: xy.surveyX, y: xy.surveyY });
+        }
+      }
+    });
+  }
+
+  if (candidates.length === 0) {
+    alert('比較対象となる基準点（既知点）が登録されていません。\n基準点を登録するか、下の「◀ / ▶」ボタンで手動微調整してください。');
+    return;
+  }
+
+  // カメラの現在の視準方位（State.arHeading）と各候補点への理論方位の角度差を比較
+  let bestPoint = null;
+  let minDiffAngle = Infinity;
+  let bestTargetAzDeg = 0;
+
+  candidates.forEach(cand => {
+    const dX = cand.x - camX;
+    const dY = cand.y - camY;
+    const dist = Math.hypot(dX, dY);
+    if (dist < 1.0) return; // 1m未満の直下点はスキップ
+
+    // 北=0, 時計回りラジアン -> 度
+    let azDeg = (Math.atan2(dY, dX) * 180 / Math.PI + 360) % 360;
+    let diff = Math.abs(azDeg - State.arHeading);
+    if (diff > 180) diff = 360 - diff;
+
+    if (diff < minDiffAngle) {
+      minDiffAngle = diff;
+      bestPoint = cand;
+      bestTargetAzDeg = azDeg;
+    }
+  });
+
+  if (!bestPoint || minDiffAngle > 65) {
+    alert('照準方向（視野±65度以内）に基準点が見つかりませんでした。\n目的の基準点（杭や標識）にスマホのカメラを向けてから再度押してください。');
+    return;
+  }
+
+  // 生方位（arRawHeading）から目標点方位への差分をarHeadingOffsetに設定
+  let newOffset = bestTargetAzDeg - State.arRawHeading;
+  while (newOffset > 180) newOffset -= 360;
+  while (newOffset < -180) newOffset += 360;
+
+  State.arHeadingOffset = Math.round(newOffset * 10) / 10;
+  if (window.updateArHeadingOffsetUI) window.updateArHeadingOffsetUI();
+  showToast(`🎯「${bestPoint.name}」に合わせて方位角を校正しました (補正: ${State.arHeadingOffset > 0 ? '+' : ''}${State.arHeadingOffset.toFixed(1)}°)`);
+}
+window.calibrateArHeadingToTarget = calibrateArHeadingToTarget;
 
 // AR Canvas リサイズ
 function resizeArCanvas() {
@@ -7770,13 +7888,20 @@ async function startArMode() {
     }
   }
 
-  // 4. イベント登録
-  window.addEventListener('deviceorientation', onArDeviceOrientation, true);
+  // 4. イベント登録 (Androidの絶対コンパス優先、iOS/その他は通常)
+  if ('ondeviceorientationabsolute' in window) {
+    window.addEventListener('deviceorientationabsolute', onArDeviceOrientation, true);
+  } else {
+    window.addEventListener('deviceorientation', onArDeviceOrientation, true);
+  }
 
-  // 5. AR画面の表示
+  // 5. AR画面の表示 & ピルボタンのアクティブ化
   const arContainer = document.getElementById('arContainer');
   if (arContainer) arContainer.classList.add('active');
+  const elPillAr = document.getElementById('btnPillAr');
+  if (elPillAr) elPillAr.classList.add('ar-active');
   State.arActive = true;
+  if (window.updateArHeadingOffsetUI) window.updateArHeadingOffsetUI();
 
   // 6. Canvas初期化とレンダリング開始
   resizeArCanvas();
@@ -7794,6 +7919,7 @@ function stopArMode() {
     cancelAnimationFrame(State.arAnimFrameId);
     State.arAnimFrameId = null;
   }
+  window.removeEventListener('deviceorientationabsolute', onArDeviceOrientation, true);
   window.removeEventListener('deviceorientation', onArDeviceOrientation, true);
   window.removeEventListener('resize', resizeArCanvas);
 
@@ -7806,6 +7932,8 @@ function stopArMode() {
 
   const arContainer = document.getElementById('arContainer');
   if (arContainer) arContainer.classList.remove('active');
+  const elPillAr = document.getElementById('btnPillAr');
+  if (elPillAr) elPillAr.classList.remove('ar-active');
 
   showToast('地図画面に戻りました');
 }
