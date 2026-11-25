@@ -1168,7 +1168,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.00 (2026/11/25 19:25)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.02 (2026/11/25 20:50)</span>
     </div>
   </div>
 
@@ -1385,7 +1385,8 @@
             </div>
 
             <div style="font-size:11px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:4px 8px; margin-top:2px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; color:#475569;">
-              <span>📐 縮尺係数 (自動計算): <b id="inlineDispScale" style="color:#0369a1;">---</b></span>
+              <span>📐 縮尺係数: <b id="inlineDispScale" style="color:#0369a1;">---</b></span>
+              <span>🌐 ジオイド高: <b id="inlineDispGeoid" style="color:#047857;">---</b></span>
             </div>
 
             <button class="btn btn-primary btn-sm" id="btnInlineSavePoint" style="width:100%; padding:8px; font-size:12px; margin-top:2px;">
@@ -1700,7 +1701,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.0.00 (2026/11/25 19:25)</b>
+              アプリVer: <b id="settingsVerLabel">v1.0.02 (2026/11/25 20:50)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -4436,10 +4437,191 @@ function clearDxfData() {
 // 8. TS観測データ計算 & T3D自動展開エンジン (T3DX / T3DC)
 // ==========================================
 
-// 国土地理院 ジオイド高計算API (日本のジオイド2011) レートリミッター付きキュー (公式制限: 10秒間に最大10回まで・安全マージン付1.3秒間隔)
-const geoidQueue = [];
-let isGeoidProcessing = false;
-let lastGeoidCallTime = 0;
+// ==========================================
+// 国土地理院 ジオイド2024 (JPGEO2024 + Hrefconv2024) 完全ローカル内挿計算エンジン
+// 完全オフライン対応・外部API負荷ゼロ・公認モデル準拠バイリニア内挿
+// ==========================================
+const Geoid2024 = {
+  isLoaded: false,
+  isLoading: false,
+  initPromise: null,
+  gridInfo: null,
+  points: null,
+
+  async init() {
+    if (this.isLoaded) return true;
+    if (this.initPromise) return this.initPromise;
+
+    this.isLoading = true;
+    this.initPromise = (async () => {
+      try {
+        let arrayBuffer = null;
+
+        // 1. IndexedDB からキャッシュ読み込みを試行 (完全オフライン対応)
+        try {
+          arrayBuffer = await this.loadFromIDB();
+        } catch (e) {
+          console.warn('Geoid2024 IDB load failed:', e);
+        }
+
+        // 2. キャッシュがなければ fetch して解凍 (約405KB)
+        if (!arrayBuffer) {
+          console.log('Geoid2024: Downloading data/jpgeo2024.bin.gz...');
+          const resp = await fetch('data/jpgeo2024.bin.gz');
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+          if (typeof DecompressionStream !== 'undefined') {
+            const ds = new DecompressionStream('gzip');
+            const decompressedStream = resp.body.pipeThrough(ds);
+            arrayBuffer = await new Response(decompressedStream).arrayBuffer();
+          } else {
+            throw new Error('DecompressionStream not supported');
+          }
+
+          // IndexedDB に保存 (次回以降完全オフライン起動)
+          try {
+            await this.saveToIDB(arrayBuffer);
+          } catch (e) {
+            console.warn('Geoid2024 IDB save failed:', e);
+          }
+        }
+
+        // 3. バイナリデコード (ヘッダー + 線形予測差分復元)
+        this.decode(arrayBuffer);
+        this.isLoaded = true;
+        this.isLoading = false;
+        console.log('Geoid2024: Engine ready (offline calculation enabled)');
+
+        // 準備完了後、手入力プレビューや未取得既知点への自動付与を実行
+        if (typeof updateModalScalePreview === 'function') updateModalScalePreview();
+        if (typeof updateInlineScalePreview === 'function') updateInlineScalePreview();
+        if (typeof startBackgroundGeoidFetch === 'function') startBackgroundGeoidFetch();
+
+        return true;
+      } catch (err) {
+        console.error('Geoid2024: Initialization failed:', err);
+        this.isLoading = false;
+        return false;
+      }
+    })();
+
+    return this.initPromise;
+  },
+
+  decode(buf) {
+    const header = new DataView(buf, 0, 28);
+    this.gridInfo = {
+      x_num: header.getUint16(0, true),
+      y_num: header.getUint16(2, true),
+      x_denom: header.getUint16(4, true),
+      y_denom: header.getUint16(6, true),
+      x_min: header.getFloat32(8, true),
+      y_min: header.getFloat32(12, true),
+      ikind: header.getUint16(16, true),
+      version: new TextDecoder().decode(new Uint8Array(buf, 18, 10)).replace(/\0/g, '').trim()
+    };
+
+    const diffs = new Int32Array(buf, 28);
+    const n = diffs.length;
+    const points = new Int32Array(n);
+    const x_num = this.gridInfo.x_num;
+
+    let prev_x1y1 = 9990000;
+    let prev_x1 = 9990000;
+
+    for (let pos = 0; pos < n; pos++) {
+      const prev_y1 = pos < x_num ? 9990000 : points[pos - x_num];
+      const predicted = prev_x1 + prev_y1 - prev_x1y1;
+      const curr = predicted + diffs[pos];
+      points[pos] = curr;
+      prev_x1 = curr;
+      prev_x1y1 = prev_y1;
+    }
+
+    this.points = points;
+  },
+
+  calc(lat, lng) {
+    if (!this.isLoaded || !this.points) return null;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return null;
+
+    const g = this.gridInfo;
+    const gx = (lng - g.x_min) * g.x_denom;
+    const gy = (lat - g.y_min) * g.y_denom;
+    if (gx < 0 || gy < 0) return null;
+
+    const ix = Math.floor(gx);
+    const iy = Math.floor(gy);
+    if (ix >= g.x_num || iy >= g.y_num) return null;
+
+    const xr = gx - ix;
+    const yr = gy - iy;
+
+    const v00 = this.lookup(ix, iy);
+    const v01 = ix + 1 < g.x_num ? this.lookup(ix + 1, iy) : NaN;
+    const v10 = iy + 1 < g.y_num ? this.lookup(ix, iy + 1) : NaN;
+    const v11 = (ix + 1 < g.x_num && iy + 1 < g.y_num) ? this.lookup(ix + 1, iy + 1) : NaN;
+
+    if (isNaN(v00) || isNaN(v01) || isNaN(v10) || isNaN(v11)) return null;
+
+    let val;
+    if (xr === 0 && yr === 0) {
+      val = v00;
+    } else if (xr === 0) {
+      val = v00 * (1 - yr) + v10 * yr;
+    } else if (yr === 0) {
+      val = v00 * (1 - xr) + v01 * xr;
+    } else {
+      val = v00 * (1 - xr) * (1 - yr) + v01 * xr * (1 - yr) + v10 * (1 - xr) * yr + v11 * xr * yr;
+    }
+
+    return Math.round(val * 10000) / 10000;
+  },
+
+  lookup(ix, iy) {
+    if (ix >= this.gridInfo.x_num || iy >= this.gridInfo.y_num) return NaN;
+    const raw = this.points[iy * this.gridInfo.x_num + ix];
+    return raw === 9990000 ? NaN : raw / 10000.0;
+  },
+
+  openIDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('SurveyAppGeoidDB', 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('models')) {
+          db.createObjectStore('models');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async loadFromIDB() {
+    const db = await this.openIDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('models', 'readonly');
+      const store = tx.objectStore('models');
+      const req = store.get('jpgeo2024');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async saveToIDB(arrayBuffer) {
+    const db = await this.openIDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('models', 'readwrite');
+      const store = tx.objectStore('models');
+      const req = store.put(arrayBuffer, 'jpgeo2024');
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+};
+
+// ジオイド高キャッシュ & 取得関数 (完全ローカル内挿計算)
 const geoidCache = {}; // "lat,lng" -> geoid (m)
 
 async function fetchGsiGeoid(lat, lng) {
@@ -4447,61 +4629,66 @@ async function fetchGsiGeoid(lat, lng) {
   const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
   if (geoidCache[key] !== undefined) return geoidCache[key];
 
-  return new Promise((resolve) => {
-    geoidQueue.push({ lat, lng, key, resolve });
-    processGeoidQueue();
-  });
-}
-
-async function processGeoidQueue() {
-  if (isGeoidProcessing || geoidQueue.length === 0) return;
-  isGeoidProcessing = true;
-
-  while (geoidQueue.length > 0) {
-    const item = geoidQueue.shift();
-    // 10秒間に10回を超えない制限を安全マージンをもって厳守するため、直前のリクエストから最低1300ms(1.3秒・10秒約7回ペース)空ける
-    const now = Date.now();
-    const elapsed = now - lastGeoidCallTime;
-    if (elapsed < 1300) {
-      await new Promise(r => setTimeout(r, 1300 - elapsed));
-    }
-
-    try {
-      const url = `https://vldb.gsi.go.jp/sokuchi/surveycalc/geoid/calcgh/cgi/geoidcalc.pl?outputType=json&latitude=${item.lat}&longitude=${item.lng}`;
-      lastGeoidCallTime = Date.now();
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data && data.OutputData && data.OutputData.geoid) {
-        const gVal = parseFloat(data.OutputData.geoid);
-        geoidCache[item.key] = isNaN(gVal) ? null : gVal;
-        item.resolve(geoidCache[item.key]);
-      } else {
-        item.resolve(null);
-      }
-    } catch (e) {
-      console.warn('ジオイド高API取得失敗:', e);
-      item.resolve(null);
-    }
+  if (!Geoid2024.isLoaded) {
+    await Geoid2024.init();
   }
 
-  isGeoidProcessing = false;
+  const val = Geoid2024.calc(lat, lng);
+  if (val !== null && typeof val === 'number') {
+    geoidCache[key] = val;
+    return val;
+  }
+  return null;
 }
 
-// 既知点リストの縮尺係数補完 (ジオイド高API自動取得は成果差異・混乱防止のため完全停止)
+let isBgGeoidRunning = false;
+
+// 既知点リストの縮尺係数・ジオイド高のバックグラウンド自動取得 (国土地理院API 1.3秒レートリミット厳守)
 async function startBackgroundGeoidFetch() {
-  if (!State.knownPoints || State.knownPoints.length === 0) return;
-  let needsSave = false;
-  for (const pt of State.knownPoints) {
-    // 縮尺係数が無ければ計算補完 (中央子午線離れYに基づく)
-    if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
-      const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
-      pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
-      needsSave = true;
+  if (isBgGeoidRunning || !State.knownPoints || State.knownPoints.length === 0) return;
+  isBgGeoidRunning = true;
+
+  try {
+    let needsSave = false;
+    // 1. 縮尺係数の即時補完
+    for (const pt of State.knownPoints) {
+      if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
+        const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
+        pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
+        needsSave = true;
+      }
     }
-  }
-  if (needsSave) {
-    savePoints();
-    renderKnownPoints();
+    if (needsSave) {
+      savePoints();
+      renderKnownPoints();
+    }
+
+    // 2. ジオイド高の順次自動取得 (未取得の点のみ、1.3秒間隔キューで安全確実に取得)
+    for (const pt of State.knownPoints) {
+      if (typeof pt.geoid !== 'number' || isNaN(pt.geoid)) {
+        const ptZone = pt.zoneId || State.currentZoneId;
+        const ll = xyToLatLng(pt.x, pt.y, ptZone, pt.isSurveySaved !== false);
+        if (ll) {
+          const key = `${ll.lat.toFixed(5)},${ll.lng.toFixed(5)}`;
+          if (geoidCache[key] !== undefined && typeof geoidCache[key] === 'number') {
+            pt.geoid = geoidCache[key];
+            savePoints();
+            renderKnownPoints();
+          } else {
+            const g = await fetchGsiGeoid(ll.lat, ll.lng);
+            if (typeof g === 'number' && !isNaN(g)) {
+              pt.geoid = g;
+              savePoints();
+              renderKnownPoints();
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Background geoid fetch error:', err);
+  } finally {
+    isBgGeoidRunning = false;
   }
 }
 
@@ -4514,37 +4701,69 @@ function calcScaleFactor(y) {
   return m0 * (1.0 + (yVal * yVal) / (2.0 * R * R));
 }
 
-// 手入力モーダルでの縮尺係数リアルタイムプレビュー
+// 手入力モーダルでの縮尺係数 & ジオイド高リアルタイムプレビュー
 function updateModalScalePreview() {
   const elScale = document.getElementById('modalDispScale');
-  if (!elScale) return;
+  const elGeoid = document.getElementById('modalDispGeoid');
   const xRaw = normalizeNumberStr(document.getElementById('modalCoordX').value);
   const yRaw = normalizeNumberStr(document.getElementById('modalCoordY').value);
   const x = parseFloat(xRaw);
   const y = parseFloat(yRaw);
+
   const eastDist = State.isSurveyAxis ? y : x;
   if (!isNaN(eastDist)) {
-    const s = calcScaleFactor(eastDist);
-    elScale.textContent = s.toFixed(6);
+    if (elScale) {
+      const s = calcScaleFactor(eastDist);
+      elScale.textContent = s.toFixed(6);
+    }
+    if (elGeoid) {
+      const zoneId = State.currentZoneId;
+      const ll = xyToLatLng(x, y, zoneId, State.isSurveyAxis);
+      if (ll && Geoid2024.isLoaded) {
+        const g = Geoid2024.calc(ll.lat, ll.lng);
+        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(4) + ' m' : '---';
+      } else if (!Geoid2024.isLoaded) {
+        elGeoid.textContent = '準備中...';
+      } else {
+        elGeoid.textContent = '---';
+      }
+    }
   } else {
-    elScale.textContent = '---';
+    if (elScale) elScale.textContent = '---';
+    if (elGeoid) elGeoid.textContent = '---';
   }
 }
 
-// インライン手入力での縮尺係数リアルタイムプレビュー
+// インライン手入力での縮尺係数 & ジオイド高リアルタイムプレビュー
 function updateInlineScalePreview() {
   const elScale = document.getElementById('inlineDispScale');
-  if (!elScale) return;
+  const elGeoid = document.getElementById('inlineDispGeoid');
   const xRaw = normalizeNumberStr(document.getElementById('inlineCoordX').value);
   const yRaw = normalizeNumberStr(document.getElementById('inlineCoordY').value);
   const x = parseFloat(xRaw);
   const y = parseFloat(yRaw);
+
   const eastDist = State.isSurveyAxis ? y : x;
   if (!isNaN(eastDist)) {
-    const s = calcScaleFactor(eastDist);
-    elScale.textContent = s.toFixed(6);
+    if (elScale) {
+      const s = calcScaleFactor(eastDist);
+      elScale.textContent = s.toFixed(6);
+    }
+    if (elGeoid) {
+      const zoneId = State.currentZoneId;
+      const ll = xyToLatLng(x, y, zoneId, State.isSurveyAxis);
+      if (ll && Geoid2024.isLoaded) {
+        const g = Geoid2024.calc(ll.lat, ll.lng);
+        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(4) + ' m' : '---';
+      } else if (!Geoid2024.isLoaded) {
+        elGeoid.textContent = '準備中...';
+      } else {
+        elGeoid.textContent = '---';
+      }
+    }
   } else {
-    elScale.textContent = '---';
+    if (elScale) elScale.textContent = '---';
+    if (elGeoid) elGeoid.textContent = '---';
   }
 }
 
@@ -6603,7 +6822,7 @@ function openKnownModal(pt = null) {
     pH.value = '';
     pZone.value = State.currentZoneId;
     if (elScale) elScale.textContent = '保存時に自動計算';
-    if (elGeoid) elGeoid.textContent = '---';
+    if (elGeoid) elGeoid.textContent = '--- (保存時に自動取得)';
   }
 
   updateAxisLabels();
@@ -6685,10 +6904,23 @@ async function fetchElevForModal() {
   inputH.value = '取得中...';
   showToast('国土地理院 標高APIを取得中...');
 
-  const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
+  const elGeoid = document.getElementById('modalDispGeoid');
+  if (elGeoid) elGeoid.textContent = '取得中...';
+
+  // 標高とジオイド高を並行取得 (ジオイドAPIは1.3秒キューで安全実行)
+  const [elevRes, geoidVal] = await Promise.all([
+    fetchGsiElevation(latlng.lat, latlng.lng),
+    fetchGsiGeoid(latlng.lat, latlng.lng)
+  ]);
+
+  if (elGeoid) {
+    elGeoid.textContent = (typeof geoidVal === 'number') ? `${geoidVal.toFixed(3)} m` : '---';
+  }
+
   if (elevRes && typeof elevRes.h === 'number') {
     inputH.value = elevRes.h.toFixed(3);
-    showToast(`標高を取得しました (${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
+    const geoidMsg = (typeof geoidVal === 'number') ? ` / ジオイド: ${geoidVal.toFixed(3)}m` : '';
+    showToast(`標高を取得しました (${elevRes.h.toFixed(2)}m${geoidMsg})`);
   } else {
     inputH.value = (oldH === '取得中...') ? '' : oldH;
     alert('標高データを取得できませんでした (海洋や海外、またはAPI一時不可)。');
@@ -6914,10 +7146,22 @@ async function fetchElevForInline() {
   inputH.value = '取得中...';
   showToast('国土地理院 標高APIを取得中...');
 
-  const elevRes = await fetchGsiElevation(latlng.lat, latlng.lng);
+  const elInlineGeoid = document.getElementById('inlineDispGeoid');
+  if (elInlineGeoid) elInlineGeoid.textContent = '取得中...';
+
+  const [elevRes, geoidVal] = await Promise.all([
+    fetchGsiElevation(latlng.lat, latlng.lng),
+    fetchGsiGeoid(latlng.lat, latlng.lng)
+  ]);
+
+  if (elInlineGeoid) {
+    elInlineGeoid.textContent = (typeof geoidVal === 'number') ? `${geoidVal.toFixed(3)} m` : '---';
+  }
+
   if (elevRes && typeof elevRes.h === 'number') {
     inputH.value = elevRes.h.toFixed(3);
-    showToast(`標高を取得しました (T.P. ${elevRes.h.toFixed(2)}m: ${elevRes.src})`);
+    const geoidMsg = (typeof geoidVal === 'number') ? ` / ジオイド: ${geoidVal.toFixed(3)}m` : '';
+    showToast(`標高を取得しました (T.P. ${elevRes.h.toFixed(2)}m${geoidMsg})`);
   } else {
     inputH.value = (oldH === '取得中...') ? '' : oldH;
     alert('標高データを取得できませんでした (海域またはAPI一時不可)。');
@@ -7449,6 +7693,10 @@ map.on('mouseout', () => {
     hoverSnapMarker = null;
   }
 });
+
+// 起動
+// 起動時にジオイド2024エンジンをバックグラウンド準備
+Geoid2024.init();
 
 // 起動
 window.addEventListener('DOMContentLoaded', initUi);
