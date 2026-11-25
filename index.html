@@ -170,9 +170,12 @@
       z-index: 1000;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      align-items: flex-start;
+      gap: 5px; /* ボタン間隔と同じ5px */
+      pointer-events: none;
     }
     .status-pill {
+      pointer-events: auto;
       background: rgba(255, 255, 255, 0.94);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(203, 213, 225, 0.85);
@@ -231,6 +234,7 @@
     /* ステータス詳細ポップアップ */
     .status-detail-popup {
       display: none;
+      pointer-events: auto;
       background: rgba(255, 255, 255, 0.96);
       backdrop-filter: blur(12px);
       border: 1px solid #cbd5e1;
@@ -249,13 +253,9 @@
 
     /* 左側フローティング・アクションピルメニュー */
     .floating-pill-menu {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      z-index: 1000;
       display: flex;
       flex-direction: column;
+      align-items: flex-start;
       gap: 5px; /* 上下間隔を従来の半分(5px)に集約 */
       pointer-events: none;
     }
@@ -1168,7 +1168,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.8 (2026/11/25 16:10)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.9 (2026/11/25 16:20)</span>
     </div>
   </div>
 
@@ -1206,10 +1206,8 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- Left Floating Action Pills (直感的な5大機能ピルメニュー) -->
-  <div class="floating-pill-menu" id="floatingPillMenu">
+    <!-- Left Floating Action Pills (直感的な5大機能ピルメニュー: 詳細カード直下に隙間5pxで密着配置) -->
+    <div class="floating-pill-menu" id="floatingPillMenu">
     <button class="action-pill pill-gps" id="btnPillGps" title="GPS測位開始・現在地に移動">
       <span class="pill-icon">🎯</span>
       <span class="pill-label">現在地</span>
@@ -1231,6 +1229,7 @@
       <span class="pill-icon">⚙️</span>
       <span class="pill-label">設定</span>
     </button>
+    </div>
   </div>
 
   <!-- 旧トップコントロール (内部互換用・非表示) -->
@@ -1701,7 +1700,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.9.8 (2026/11/25 16:10)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.9 (2026/11/25 16:20)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
