@@ -1300,7 +1300,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.5 (2026/11/25 15:28)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.6 (2026/11/25 15:42)</span>
     </div>
   </div>
 
@@ -1837,7 +1837,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.9.5 (2026/11/25 15:28)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.6 (2026/11/25 15:42)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -4380,6 +4380,17 @@ function parseDxfFallback(text) {
     if (!inEntitiesSection) continue;
 
     if (code === 0) {
+      if (val === 'VERTEX') {
+        // AutoCAD標準POLYLINEの頂点サブエンティティ: 現在のPOLYLINEをそのまま継続
+        continue;
+      }
+      if (val === 'SEQEND') {
+        // POLYLINE/BLOCKの終端タグ
+        if (currentEntity && !currentEntity.inPaperSpace) entities.push(currentEntity);
+        currentEntity = null;
+        continue;
+      }
+
       if (currentEntity && !currentEntity.inPaperSpace) entities.push(currentEntity);
       currentEntity = { type: val, layer: '0', vertices: [] };
     } else if (currentEntity) {
@@ -7898,6 +7909,18 @@ function resizeArCanvas() {
 
 // AR開始
 async function startArMode() {
+  const origWatchingGps = State.isWatchingGps;
+  const origGpsFollow = State.isGpsFollow;
+
+  const rollbackGpsState = () => {
+    if (!origWatchingGps && State.isWatchingGps) {
+      toggleGps(); // 測位を元の停止状態に戻す
+    } else {
+      State.isGpsFollow = origGpsFollow; // 追従モードを元の状態に戻す
+      updateGpsStatusUI();
+    }
+  };
+
   // 1. GPS測位がOFFなら自動で開始
   if (!State.isWatchingGps) {
     showToast('🥽 ARモード起動: GPS測位を自動開始します');
@@ -7907,12 +7930,14 @@ async function startArMode() {
   // 測位機能の有無チェック
   if (!navigator.geolocation) {
     alert('端末の位置情報サービスがサポートされていないため、ARモードを開始できません。');
+    rollbackGpsState();
     return;
   }
 
   // 2. カメラストリーム取得 (背面カメラ)
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     alert('お使いの環境ではカメラ(getUserMedia)がサポートされていないか、HTTPS接続ではありません。');
+    rollbackGpsState();
     return;
   }
 
@@ -7935,6 +7960,7 @@ async function startArMode() {
   } catch (err) {
     console.warn('カメラ起動エラー:', err);
     alert('カメラへのアクセスが拒否されたか、他のアプリで使用中のため起動できませんでした。\nブラウザのカメラ権限を許可してください。');
+    rollbackGpsState();
     return;
   }
 
@@ -8116,9 +8142,9 @@ function renderArFrame() {
     return;
   }
 
-  // カメラ視点座標 (測量系: X=北, Y=東)
-  const camX = isSur ? p.surveyX : p.mathX;
-  const camY = isSur ? p.surveyY : p.mathY;
+  // カメラ視点座標: 北(North)と東(East)で完全統一 (測量系X=北, Y=東)
+  const camNorth = p.surveyX;
+  const camEast  = p.surveyY;
   // 地表面標高 + 端末保持高さ (1.5m) + ユーザー微調整オフセット
   const groundElev = (p.gsiH !== null && typeof p.gsiH === 'number') ? p.gsiH : ((p.gpsH !== null && typeof p.gpsH === 'number') ? p.gpsH : 0);
   const camZ = groundElev + 1.5 + State.arHeightOffset;
@@ -8130,6 +8156,11 @@ function renderArFrame() {
 
   let drawnLinesCount = 0;
   let drawnPointsCount = 0;
+
+  // DXFの座標系モード (数学系: X=東, Y=北 / 測量系: X=北, Y=東)
+  const isDxfSur = (State.dxfAxisMode === 'survey');
+  const getDxfPtNorth = (pt) => (isDxfSur ? pt.x : pt.y);
+  const getDxfPtEast  = (pt) => (isDxfSur ? pt.y : pt.x);
 
   // --- 1. DXF図面の超高速バッチ重畳描画 (距離カリング & パス集約で巨大DXFも60FPS爆速) ---
   if (State.arShowDxf && State.dxfData && State.dxfData.entities) {
@@ -8155,16 +8186,31 @@ function renderArFrame() {
       const entColor = getArEntityColor(ent);
 
       if (ent.type === 'LINE') {
-        if (!ent.start || !ent.end) continue;
-        // 中点での高速代表距離カリング
-        const mx = (ent.start.x + ent.end.x) * 0.5;
-        const my = (ent.start.y + ent.end.y) * 0.5;
-        const dx = mx - camX;
-        const dy = my - camY;
-        if (maxDist < 10000 && (dx * dx + dy * dy) > maxDistSq) continue;
+        let p1_raw = null;
+        let p2_raw = null;
+        if (ent.vertices && ent.vertices.length >= 2) {
+          p1_raw = ent.vertices[0];
+          p2_raw = ent.vertices[1];
+        } else if (ent.start && ent.end) {
+          p1_raw = ent.start;
+          p2_raw = ent.end;
+        }
+        if (!p1_raw || !p2_raw) continue;
 
-        const p1 = projectPointToAr(ent.start.x, ent.start.y, ent.start.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
-        const p2 = projectPointToAr(ent.end.x, ent.end.y, ent.end.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+        const p1N = getDxfPtNorth(p1_raw);
+        const p1E = getDxfPtEast(p1_raw);
+        const p2N = getDxfPtNorth(p2_raw);
+        const p2E = getDxfPtEast(p2_raw);
+
+        // 中点での高速代表距離カリング
+        const midN = (p1N + p2N) * 0.5;
+        const midE = (p1E + p2E) * 0.5;
+        const dN = midN - camNorth;
+        const dE = midE - camEast;
+        if (maxDist < 10000 && (dN * dN + dE * dE) > maxDistSq) continue;
+
+        const p1 = projectPointToAr(p1N, p1E, p1_raw.z || groundElev, camNorth, camEast, camZ, heading, pitch, roll, width, height);
+        const p2 = projectPointToAr(p2N, p2E, p2_raw.z || groundElev, camNorth, camEast, camZ, heading, pitch, roll, width, height);
         if (p1 && p2 && (p1.inView || p2.inView)) {
           if (!colorBatches[entColor]) colorBatches[entColor] = [];
           colorBatches[entColor].push(p1.x, p1.y, p2.x, p2.y);
@@ -8175,17 +8221,20 @@ function renderArFrame() {
         if (!vertices || vertices.length < 2) continue;
 
         // 始点での高速代表距離カリング (30km四方の巨大図面を1命令でスキップ)
-        const v0 = vertices[0];
-        const dx0 = v0.x - camX;
-        const dy0 = v0.y - camY;
-        if (maxDist < 10000 && (dx0 * dx0 + dy0 * dy0) > maxDistSq) continue;
+        const v0N = getDxfPtNorth(vertices[0]);
+        const v0E = getDxfPtEast(vertices[0]);
+        const dN0 = v0N - camNorth;
+        const dE0 = v0E - camEast;
+        if (maxDist < 10000 && (dN0 * dN0 + dE0 * dE0) > maxDistSq) continue;
 
         // 連続頂点をつないで色バッチに格納
         let prevProj = null;
         for (let v = 0; v < vertices.length; v++) {
           if (drawnLinesCount >= MAX_DRAW_SEGMENTS) break;
           const curV = vertices[v];
-          const curProj = projectPointToAr(curV.x, curV.y, curV.z || groundElev, camX, camY, camZ, heading, pitch, roll, width, height);
+          const curN = getDxfPtNorth(curV);
+          const curE = getDxfPtEast(curV);
+          const curProj = projectPointToAr(curN, curE, curV.z || groundElev, camNorth, camEast, camZ, heading, pitch, roll, width, height);
 
           if (v > 0 && prevProj && curProj && (prevProj.inView || curProj.inView)) {
             if (!colorBatches[entColor]) colorBatches[entColor] = [];
@@ -8219,11 +8268,11 @@ function renderArFrame() {
 
     for (let k = 0; k < State.knownPoints.length; k++) {
       const kp = State.knownPoints[k];
-      const ptX = isSur ? kp.x : kp.y;
-      const ptY = isSur ? kp.y : kp.x;
+      const ptNorth = isSur ? kp.x : kp.y; // 測量系X=北
+      const ptEast  = isSur ? kp.y : kp.x; // 測量系Y=東
       const ptZ = (typeof kp.h === 'number') ? kp.h : groundElev;
 
-      const proj = projectPointToAr(ptX, ptY, ptZ, camX, camY, camZ, heading, pitch, roll, width, height);
+      const proj = projectPointToAr(ptNorth, ptEast, ptZ, camNorth, camEast, camZ, heading, pitch, roll, width, height);
       if (proj && proj.inView) {
         drawnPointsCount++;
         const isNavTarget = State.navActive && State.navTarget && State.navTarget.id === kp.id;
