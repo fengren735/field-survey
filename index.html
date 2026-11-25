@@ -295,6 +295,14 @@
       border-radius: 50%;
       background: #f1f5f9;
     }
+    .action-pill.active {
+      background: #0284c7 !important;
+      color: #ffffff !important;
+      border-color: #38bdf8 !important;
+    }
+    .action-pill.active .pill-icon {
+      background: rgba(255, 255, 255, 0.25) !important;
+    }
     .action-pill.pill-gps.gps-active {
       background: #16a34a !important;
       color: #ffffff !important;
@@ -1292,7 +1300,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.0 (2026/11/25 14:20)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.9.2 (2026/11/25 14:40)</span>
     </div>
   </div>
 
@@ -1829,7 +1837,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.9.0 (2026/11/25 14:20)</b>
+              アプリVer: <b id="settingsVerLabel">v1.9.2 (2026/11/25 14:40)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2438,8 +2446,7 @@ function initUi() {
   const elPillMeasure = document.getElementById('btnPillMeasure');
   if (elPillMeasure) {
     elPillMeasure.addEventListener('click', () => {
-      const btnMeasure = document.getElementById('btnToggleMeasure');
-      if (btnMeasure) btnMeasure.click();
+      toggleMeasureMode('dist');
     });
   }
 
@@ -2651,7 +2658,8 @@ function initUi() {
   // 移動ボタン
   const elMoveToCurrent = document.getElementById('btnMoveToCurrent');
   if (elMoveToCurrent) elMoveToCurrent.addEventListener('click', moveToCurrentPosition);
-  document.getElementById('btnMoveToKnown').addEventListener('click', moveToKnownPoints);
+  const elMoveToKnown = document.getElementById('btnMoveToKnown');
+  if (elMoveToKnown) elMoveToKnown.addEventListener('click', moveToKnownPoints);
 
   // 点名表示切替 (既知点)
   const btnToggleKnownNames = document.getElementById('btnToggleKnownNames');
@@ -3294,6 +3302,9 @@ function initUi() {
   if (btnCloseNav) {
     btnCloseNav.addEventListener('click', () => stopStakeoutNav());
   }
+
+  // 初期UI状態の反映 (GPS・基準点数など)
+  updateGpsStatusUI();
 }
 
 function activateTab(tabId) {
@@ -3304,7 +3315,8 @@ function activateTab(tabId) {
 function updateAxisLabels() {
   const isSur = State.isSurveyAxis;
   const modeName = isSur ? "測量系 (X=北, Y=東)" : "数学系 (X=東, Y=北)";
-  document.getElementById('axisModeLabel').textContent = modeName;
+  const axisModeEl = document.getElementById('axisModeLabel');
+  if (axisModeEl) axisModeEl.textContent = modeName;
   document.querySelectorAll('.axis-mode-text').forEach(el => el.textContent = isSur ? '測量系' : '数学系');
 
   const csvSel = document.getElementById('csvAxisSelect');
@@ -3314,11 +3326,15 @@ function updateAxisLabels() {
   const dxfZoneEl = document.getElementById('dxfCurrentZoneLabel');
   if (dxfZoneEl && zone) dxfZoneEl.textContent = zone.name;
 
-  document.getElementById('dispLabelX').textContent = isSur ? "X(北):" : "X(東):";
-  document.getElementById('dispLabelY').textContent = isSur ? "Y(東):" : "Y(北):";
+  const elDispLabelX = document.getElementById('dispLabelX');
+  if (elDispLabelX) elDispLabelX.textContent = isSur ? "X(北):" : "X(東):";
+  const elDispLabelY = document.getElementById('dispLabelY');
+  if (elDispLabelY) elDispLabelY.textContent = isSur ? "Y(東):" : "Y(北):";
 
-  document.getElementById('modalLabelX').textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
-  document.getElementById('modalLabelY').textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
+  const elModalLabelX = document.getElementById('modalLabelX');
+  if (elModalLabelX) elModalLabelX.textContent = isSur ? "X座標 (北向き m)" : "X座標 (東向き m)";
+  const elModalLabelY = document.getElementById('modalLabelY');
+  if (elModalLabelY) elModalLabelY.textContent = isSur ? "Y座標 (東向き m)" : "Y座標 (北向き m)";
 
   const inLblX = document.getElementById('inlineLabelX');
   const inLblY = document.getElementById('inlineLabelY');
@@ -3367,6 +3383,7 @@ function toggleGps() {
     if (elLiveBadge) elLiveBadge.style.display = 'none';
     if (elLatLng && !State.currentPosition) elLatLng.textContent = '測位待機中...';
     showToast('GPS測位を停止しました');
+    updateGpsStatusUI();
   } else {
     // 開始
     if (!navigator.geolocation) {
@@ -4602,9 +4619,12 @@ function zoomToDxfBounds() {
 
   if (bounds && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 22, animate: true });
-    // ボトムシートを閉じて地図を見やすくする
-    document.getElementById('bottomBar').classList.remove('expanded');
-    document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+    // ボトムシート・モーダルを閉じて地図を見やすくする
+    const bBar = document.getElementById('bottomBar');
+    if (bBar) bBar.classList.remove('expanded');
+    const bTog = document.getElementById('btnToggleSheet');
+    if (bTog) bTog.textContent = '詳細 ▾';
+    if (window.closeModalSheet) window.closeModalSheet();
     showToast('図面全体を表示しました');
   }
 }
@@ -5915,8 +5935,11 @@ function zoomToTsLine(lineIdx) {
   } else {
     map.fitBounds(bounds, { maxZoom: 23, padding: [60, 60], animate: true });
   }
-  document.getElementById('bottomBar').classList.remove('expanded');
-  document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+  const bBar1 = document.getElementById('bottomBar');
+  if (bBar1) bBar1.classList.remove('expanded');
+  const bTog1 = document.getElementById('btnToggleSheet');
+  if (bTog1) bTog1.textContent = '詳細 ▾';
+  if (window.closeModalSheet) window.closeModalSheet();
   showToast(`🔍 ${line.layer} (${line.points.length}点) にズームしました`);
 }
 window.zoomToTsLine = zoomToTsLine;
@@ -5959,8 +5982,11 @@ function zoomToTsBounds() {
     } else {
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 20, animate: true });
     }
-    document.getElementById('bottomBar').classList.remove('expanded');
-    document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+    const bBar2 = document.getElementById('bottomBar');
+    if (bBar2) bBar2.classList.remove('expanded');
+    const bTog2 = document.getElementById('btnToggleSheet');
+    if (bTog2) bTog2.textContent = '詳細 ▾';
+    if (window.closeModalSheet) window.closeModalSheet();
     showToast('TS展開図面にズームしました');
   }
 }
@@ -6268,18 +6294,25 @@ function toggleMeasureMode(mode = 'dist') {
   const btnArea = document.getElementById('btnToggleArea');
   const normalActions = document.getElementById('normalBottomActions');
   const measureBottom = document.getElementById('measureBottomPanel');
+  const bottomBar = document.getElementById('bottomBar');
+  const pillMeasure = document.getElementById('btnPillMeasure');
+  const btnToggleSheet = document.getElementById('btnToggleSheet');
   const mapEl = map.getContainer();
 
   if (State.measureActive) {
+    if (bottomBar) bottomBar.style.display = 'flex';
     if (normalActions) normalActions.style.display = 'none';
     if (measureBottom) measureBottom.style.display = 'flex';
+    if (pillMeasure) pillMeasure.classList.add('active');
     mapEl.classList.add('measuring-mode'); // 矢印カーソルに切り替え
-    document.getElementById('bottomBar').classList.remove('expanded');
-    document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+    if (bottomBar) bottomBar.classList.remove('expanded');
+    if (btnToggleSheet) btnToggleSheet.textContent = '詳細 ▾';
     
     setMeasureSubMode(State.measureSubMode);
     showToast(State.measureSubMode === 'area' ? '📐 面積計測モード開始 (頂点を指定)' : '📏 距離計測モード開始 (マウスホバーで事前吸着)');
   } else {
+    if (bottomBar) bottomBar.style.display = 'none';
+    if (pillMeasure) pillMeasure.classList.remove('active');
     if (btnDist) {
       btnDist.classList.remove('active');
       btnDist.style.background = '';
@@ -6588,9 +6621,12 @@ function startStakeoutNav(targetPoint) {
   targetNameEl.textContent = targetPoint.name || '目標点';
   navPanel.style.display = 'flex';
 
-  // 地図を見やすくするためボトムシートを閉じる
-  document.getElementById('bottomBar').classList.remove('expanded');
-  document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+  // 地図を見やすくするためボトムシート・モーダルを閉じる
+  const bBarNav = document.getElementById('bottomBar');
+  if (bBarNav) bBarNav.classList.remove('expanded');
+  const bTogNav = document.getElementById('btnToggleSheet');
+  if (bTogNav) bTogNav.textContent = '詳細 ▾';
+  if (window.closeModalSheet) window.closeModalSheet();
 
   // GPS測位が停止中なら自動開始
   if (!State.isWatchingGps) {
@@ -6683,8 +6719,11 @@ function updateStakeoutNav() {
 window.focusPoint = (lat, lng) => {
   if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return;
   map.setView([lat, lng], 18, { animate: true });
-  document.getElementById('bottomBar').classList.remove('expanded');
-  document.getElementById('btnToggleSheet').textContent = '詳細 ▾';
+  const bBarFoc = document.getElementById('bottomBar');
+  if (bBarFoc) bBarFoc.classList.remove('expanded');
+  const bTogFoc = document.getElementById('btnToggleSheet');
+  if (bTogFoc) bTogFoc.textContent = '詳細 ▾';
+  if (window.closeModalSheet) window.closeModalSheet();
 };
 
 window.navToPoint = (id, targetIdx = -1) => {
