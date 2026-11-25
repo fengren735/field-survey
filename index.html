@@ -532,29 +532,51 @@
       opacity: 1;
     }
 
-    /* GPS pulsing marker */
+    /* GPS pulsing marker (同心円完全センタリング設計) */
+    .gps-marker-container {
+      background: transparent !important;
+      border: none !important;
+      width: 28px !important;
+      height: 28px !important;
+      position: relative !important;
+      overflow: visible !important;
+    }
     .gps-marker-icon {
-      position: relative;
-      width: 16px;
-      height: 16px;
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      width: 14px;
+      height: 14px;
+      box-sizing: border-box;
       background: #0284c7;
-      border: 3px solid white;
+      border: 2.5px solid #ffffff;
       border-radius: 50%;
-      box-shadow: 0 0 8px rgba(2, 132, 199, 0.8);
+      box-shadow: 0 0 6px rgba(2, 132, 199, 0.8);
+      z-index: 2;
     }
     .gps-pulse {
       position: absolute;
-      top: -6px;
-      left: -6px;
+      top: 0;
+      left: 0;
       width: 28px;
       height: 28px;
+      box-sizing: border-box;
       border-radius: 50%;
-      background: rgba(2, 132, 199, 0.4);
+      background: rgba(2, 132, 199, 0.35);
+      transform-origin: center center;
       animation: pulse-ring 2s infinite ease-out;
+      pointer-events: none;
+      z-index: 1;
     }
     @keyframes pulse-ring {
-      0% { transform: scale(0.6); opacity: 1; }
-      100% { transform: scale(1.6); opacity: 0; }
+      0% {
+        transform: scale(0.5);
+        opacity: 0.9;
+      }
+      100% {
+        transform: scale(2.2);
+        opacity: 0;
+      }
     }
 
     /* Known point marker & label (★マーク & 既知点バッジ) */
@@ -908,7 +930,7 @@
   <div class="attribution-badge">
     地理院タイル・標高API: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.7.7 (2026/11/24 20:55)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.8.1 (2026/11/25 13:15)</span>
     </div>
   </div>
 
@@ -1104,6 +1126,11 @@
                   📍 現在地
                 </button>
               </div>
+            </div>
+
+            <div style="font-size:11px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:4px 8px; margin-top:2px; margin-bottom:6px; display:flex; justify-content:space-between; color:#475569;">
+              <span>📐 縮尺係数: <b id="inlineDispScale" style="color:#0369a1;">---</b></span>
+              <span>🌐 ジオイド高: <b style="color:#047857;">登録後自動取得</b></span>
             </div>
 
             <button class="btn btn-primary btn-sm" id="btnInlineSavePoint" style="width:100%; padding:8px; font-size:12px; margin-top:2px;">
@@ -1418,7 +1445,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.7.7 (2026/11/24 20:55)</b>
+              アプリVer: <b id="settingsVerLabel">v1.8.1 (2026/11/25 13:15)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -1494,6 +1521,11 @@
         <button class="btn btn-secondary btn-sm" id="btnFetchElevForModal" style="flex:1;">⛰️ 標高API取得</button>
       </div>
 
+      <div style="font-size:11px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px; margin-top:6px; display:flex; justify-content:space-between; color:#475569;">
+        <span>📐 縮尺係数: <b id="modalDispScale" style="color:#0369a1;">---</b></span>
+        <span>🌐 ジオイド高: <b id="modalDispGeoid" style="color:#047857;">---</b></span>
+      </div>
+
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
         <button class="btn btn-secondary" id="btnCancelModal">キャンセル</button>
         <button class="btn btn-primary" id="btnSavePoint">保存する</button>
@@ -1554,6 +1586,7 @@ const State = {
   currentPosition: null, // { lat, lng, x, y, h, acc, hAccuracy, src }
   isGsiElevLoading: false, // 国土地理院標高APIの取得中フラグ
   isWatchingGps: false,
+  isGpsFollow: true, // GPS追従モード (現在地を中心にマップ移動)
   watchId: null,
   knownPoints: [], // [{ id, name, x, y, h, zoneId, lat, lng }]
   showPointNames: true, // 地図上に点名を表示するか
@@ -2126,6 +2159,12 @@ function initUi() {
   document.getElementById('btnInlineSavePoint').addEventListener('click', savePointFromInline);
   document.getElementById('btnInlineFillCurrent').addEventListener('click', fillInlineWithCurrentPos);
   document.getElementById('btnInlineFetchElev').addEventListener('click', fetchElevForInline);
+
+  // リアルタイム縮尺係数プレビューイベント (手入力時に即時反映)
+  document.getElementById('modalCoordX').addEventListener('input', updateModalScalePreview);
+  document.getElementById('modalCoordY').addEventListener('input', updateModalScalePreview);
+  document.getElementById('inlineCoordX').addEventListener('input', updateInlineScalePreview);
+  document.getElementById('inlineCoordY').addEventListener('input', updateInlineScalePreview);
 
   // CSV
   document.getElementById('csvAxisSelect').addEventListener('change', (e) => {
@@ -2760,6 +2799,7 @@ function toggleGps() {
     // 停止
     if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
     State.isWatchingGps = false;
+    State.isGpsFollow = false;
     State.watchId = null;
     State.isGsiElevLoading = false;
     if (gpsMarker) {
@@ -2786,15 +2826,16 @@ function toggleGps() {
       alert('お使いの端末・ブラウザはGeolocationに対応していません。');
       return;
     }
-    showToast('🛰️ GPS測位を開始中...');
+    showToast('🛰️ GPS追従測位を開始中...');
+    State.isWatchingGps = true;
+    State.isGpsFollow = true;
     if (elGpsText) elGpsText.textContent = '測位中 (追従ON)';
     if (elBtnGps) elBtnGps.classList.add('active');
     if (elRecenter) {
       elRecenter.classList.add('gps-active');
-      elRecenter.title = '測位中 (タップで中心移動 / 再タップで停止)';
+      elRecenter.title = '追従中 (タップで停止 / 地図ドラッグで追従解除)';
     }
     if (elLiveBadge) elLiveBadge.style.display = 'inline-flex';
-    State.isWatchingGps = true;
     State.isGsiElevLoading = true;
     const elHGsi = document.getElementById('dispHGsi');
     if (elHGsi) {
@@ -2811,25 +2852,70 @@ function toggleGps() {
   }
 }
 
+// 追従・測位ステータスUIの更新
+function updateGpsStatusUI() {
+  const elLiveBadge = document.getElementById('gpsLiveBadge');
+  const elRecenter = document.getElementById('btnRecenter');
+  if (!State.isWatchingGps) {
+    if (elLiveBadge) elLiveBadge.style.display = 'none';
+    if (elRecenter) {
+      elRecenter.classList.remove('gps-active');
+      elRecenter.title = 'GPS測位開始 / 現在地に移動';
+    }
+    return;
+  }
+
+  const p = State.currentPosition;
+  const accText = (p && typeof p.accuracy === 'number') ? ` (±${Math.round(p.accuracy)}m)` : '';
+
+  if (elRecenter) {
+    if (State.isGpsFollow) {
+      elRecenter.classList.add('gps-active');
+      elRecenter.title = '追従中 (タップで停止 / 地図ドラッグで追従解除)';
+    } else {
+      elRecenter.classList.remove('gps-active');
+      elRecenter.title = '追従一時停止中 (タップで現在地へ移動・追従再開)';
+    }
+  }
+
+  if (elLiveBadge) {
+    elLiveBadge.style.display = 'inline-flex';
+    if (State.isGpsFollow) {
+      elLiveBadge.style.background = '#dcfce7';
+      elLiveBadge.style.color = '#15803d';
+      elLiveBadge.style.borderColor = '#86efac';
+      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span> 追従中${accText}`;
+    } else {
+      elLiveBadge.style.background = '#fef3c7';
+      elLiveBadge.style.color = '#b45309';
+      elLiveBadge.style.borderColor = '#fde68a';
+      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#f59e0b; display:inline-block;"></span> 追従一時停止${accText}`;
+    }
+  }
+}
+
 // マップ上の🎯ボタン（測位開始・現在地移動・停止）
 function onRecenterBtnClick() {
   if (!State.isWatchingGps) {
-    // 測位停止中なら測位開始
+    // 測位停止中なら測位開始＆追従ON
     toggleGps();
     if (State.currentPosition) {
       map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
     }
   } else {
-    // 測位中の場合
+    // 測位中の場合:
     if (State.currentPosition) {
       const center = map.getCenter();
       const dist = map.distance(center, [State.currentPosition.lat, State.currentPosition.lng]);
-      // すでに画面中心に現在地がある状態で再度押されたら測位を停止
-      if (dist < 10) {
+      // すでに画面中心にいて追従中の状態で再度押されたら測位停止
+      if (State.isGpsFollow && dist < 10) {
         toggleGps();
       } else {
+        // 追従が外れていた場合、または離れていた場合は中心に戻して追従再開
+        State.isGpsFollow = true;
         map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
-        showToast('現在地に移動しました');
+        showToast('現在地追従を再開しました');
+        updateGpsStatusUI();
       }
     } else {
       showToast('現在地を取得中...');
@@ -2954,11 +3040,7 @@ function updateCoordinateDisplays() {
   const accText = typeof p.accuracy === 'number' ? ` (±${Math.round(p.accuracy)}m)` : '';
   const elLatLng = document.getElementById('dispLatLng');
   if (elLatLng) elLatLng.textContent = `${p.lat.toFixed(6)}°, ${p.lng.toFixed(6)}°${accText}`;
-  const elLiveBadge = document.getElementById('gpsLiveBadge');
-  if (elLiveBadge && State.isWatchingGps) {
-    elLiveBadge.style.display = 'inline-flex';
-    elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span> 測位中${accText}`;
-  }
+  updateGpsStatusUI();
 
   // 平面直角座標 X / Y (1,000刻みカンマフォーマット)
   const dispX = isSur ? p.surveyX : p.mathX;
@@ -3015,11 +3097,16 @@ function updateMapGpsMarker() {
     gpsMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(map);
     gpsCircle = L.circle([lat, lng], { radius: accuracy, color: '#0284c7', weight: 1, fillOpacity: 0.15 }).addTo(map);
 
-    map.setView([lat, lng], 17);
+    map.setView([lat, lng], Math.max(map.getZoom(), 19));
   } else {
     gpsMarker.setLatLng([lat, lng]);
     gpsCircle.setLatLng([lat, lng]);
     gpsCircle.setRadius(accuracy);
+
+    // GPS追従有効時は現在地を中心に地図を自動移動
+    if (State.isGpsFollow) {
+      map.panTo([lat, lng], { animate: true, duration: 0.4 });
+    }
   }
 }
 
@@ -3098,6 +3185,11 @@ function renderKnownPoints() {
     if (!pt.id) {
       pt.id = 'pt_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substr(2, 5);
     }
+    // 縮尺係数の保証（未設定・NaN・旧データ救済）
+    if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
+      const eastDist = (pt.isSurveySaved !== false) ? (parseFloat(pt.y) || 0) : (parseFloat(pt.x) || 0);
+      pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
+    }
     // 平面直角座標から緯度経度を再計算 (各点の保存系に基づく) - 完全null安全ガード
     let latlng = null;
     try {
@@ -3173,7 +3265,7 @@ function renderKnownPoints() {
             X: ${formatCoord(pt.x, 3)} m<br>
             Y: ${formatCoord(pt.y, 3)} m<br>
             H: ${pt.h !== null && pt.h !== undefined && pt.h !== '' ? formatCoord(pt.h, 3) + ' m' : '---'}<br>
-            ${typeof pt.scale === 'number' ? `縮尺係数: ${pt.scale}<br>` : ''}
+            ${typeof pt.scale === 'number' ? `縮尺係数: ${pt.scale.toFixed(6)}<br>` : ''}
             ${typeof pt.geoid === 'number' ? `ジオイド高: ${pt.geoid} m<br>` : ''}
           </div>
           <div style="font-size:10px; color:#64748b;">系: ${zoneName} / ${pt.isSurveySaved ? '測量系' : '数学系'}</div>
@@ -3200,7 +3292,7 @@ function renderKnownPoints() {
         </div>
         <div class="point-coords">
           X: ${formatCoord(pt.x, 3)}, Y: ${formatCoord(pt.y, 3)}${pt.h !== '' && pt.h !== null ? `, H: ${formatCoord(pt.h, 2)}` : ''}
-          ${typeof pt.scale === 'number' ? `<span style="margin-left:4px; background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:10px; color:#475569; font-weight:600;">縮尺:${pt.scale}</span>` : ''}
+          ${typeof pt.scale === 'number' ? `<span style="margin-left:4px; background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:10px; color:#475569; font-weight:600;">縮尺:${pt.scale.toFixed(6)}</span>` : ''}
           ${typeof pt.geoid === 'number' ? `<span style="margin-left:4px; background:#ecfdf5; padding:1px 5px; border-radius:3px; font-size:10px; color:#047857; font-weight:600;">ジオイド:${pt.geoid}m</span>` : ''}
         </div>
       </div>
@@ -4014,24 +4106,39 @@ async function processGeoidQueue() {
 let isBgGeoidRunning = false;
 async function startBackgroundGeoidFetch() {
   if (isBgGeoidRunning || !State.knownPoints || State.knownPoints.length === 0) return;
+
+  const targetPts = State.knownPoints.filter(p => typeof p.geoid !== 'number' || isNaN(p.geoid));
   isBgGeoidRunning = true;
+  if (targetPts.length > 0) {
+    showToast(`既知点（${targetPts.length}点）のジオイド高を自動取得中...`);
+  }
 
   try {
     for (const pt of State.knownPoints) {
       const ptZone = pt.zoneId || State.currentZoneId;
-      // 縮尺係数が無ければ計算補完
+      // 縮尺係数が無ければ計算補完 (中央子午線離れYに基づく)
       if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
-        pt.scale = Math.round(calcScaleFactor(pt.y) * 1000000) / 1000000;
+        const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
+        pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
+        savePoints();
+        renderKnownPoints();
       }
       // ジオイド高が未設定ならAPIキューに投入して順次取得 (1.3秒間隔で安心・安全に取得)
       if (typeof pt.geoid !== 'number' || isNaN(pt.geoid)) {
-        const ll = xyToLatLng(pt.x, pt.y, ptZone, pt.isSurveySaved !== false);
-        if (ll) {
-          const key = `${ll.lat.toFixed(5)},${ll.lng.toFixed(5)}`;
-          if (geoidCache[key] !== undefined) {
+        let lat = pt.lat;
+        let lng = pt.lng;
+        if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+          const ll = xyToLatLng(pt.x, pt.y, ptZone, pt.isSurveySaved !== false);
+          if (ll) { lat = ll.lat; lng = ll.lng; pt.lat = lat; pt.lng = lng; }
+        }
+        if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+          const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+          if (geoidCache[key] !== undefined && geoidCache[key] !== null) {
             pt.geoid = geoidCache[key];
+            savePoints();
+            renderKnownPoints();
           } else {
-            const g = await fetchGsiGeoid(ll.lat, ll.lng);
+            const g = await fetchGsiGeoid(lat, lng);
             if (typeof g === 'number' && !isNaN(g)) {
               pt.geoid = g;
               geoidCache[key] = g;
@@ -4043,6 +4150,10 @@ async function startBackgroundGeoidFetch() {
       }
     }
     savePoints();
+    renderKnownPoints();
+    if (targetPts.length > 0) {
+      showToast('既知点のジオイド高の自動取得が完了しました');
+    }
   } catch (e) {
     console.warn('バックグラウンドジオイド高取得エラー:', e);
   } finally {
@@ -4054,8 +4165,43 @@ async function startBackgroundGeoidFetch() {
 function calcScaleFactor(y) {
   const m0 = 0.9999;
   const R = 6370000.0;
-  const yVal = typeof y === 'number' && !isNaN(y) ? y : 0.0;
+  const numY = (typeof y === 'number') ? y : parseFloat(y);
+  const yVal = (!isNaN(numY)) ? numY : 0.0;
   return m0 * (1.0 + (yVal * yVal) / (2.0 * R * R));
+}
+
+// 手入力モーダルでの縮尺係数リアルタイムプレビュー
+function updateModalScalePreview() {
+  const elScale = document.getElementById('modalDispScale');
+  if (!elScale) return;
+  const xRaw = normalizeNumberStr(document.getElementById('modalCoordX').value);
+  const yRaw = normalizeNumberStr(document.getElementById('modalCoordY').value);
+  const x = parseFloat(xRaw);
+  const y = parseFloat(yRaw);
+  const eastDist = State.isSurveyAxis ? y : x;
+  if (!isNaN(eastDist)) {
+    const s = calcScaleFactor(eastDist);
+    elScale.textContent = s.toFixed(6);
+  } else {
+    elScale.textContent = '---';
+  }
+}
+
+// インライン手入力での縮尺係数リアルタイムプレビュー
+function updateInlineScalePreview() {
+  const elScale = document.getElementById('inlineDispScale');
+  if (!elScale) return;
+  const xRaw = normalizeNumberStr(document.getElementById('inlineCoordX').value);
+  const yRaw = normalizeNumberStr(document.getElementById('inlineCoordY').value);
+  const x = parseFloat(xRaw);
+  const y = parseFloat(yRaw);
+  const eastDist = State.isSurveyAxis ? y : x;
+  if (!isNaN(eastDist)) {
+    const s = calcScaleFactor(eastDist);
+    elScale.textContent = s.toFixed(6);
+  } else {
+    elScale.textContent = '---';
+  }
 }
 
 // DMS形式 (DDD.MMSS) -> DEG (十進度)
@@ -6066,6 +6212,8 @@ function openKnownModal(pt = null) {
   const pY = document.getElementById('modalCoordY');
   const pH = document.getElementById('modalCoordH');
   const pZone = document.getElementById('modalZone');
+  const elScale = document.getElementById('modalDispScale');
+  const elGeoid = document.getElementById('modalDispGeoid');
 
   if (pt) {
     title.textContent = '既知点の編集';
@@ -6075,6 +6223,14 @@ function openKnownModal(pt = null) {
     pY.value = pt.y;
     pH.value = pt.h !== null ? pt.h : '';
     pZone.value = pt.zoneId || State.currentZoneId;
+    if (elScale) {
+      const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
+      const sVal = (typeof pt.scale === 'number') ? pt.scale : (Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000);
+      elScale.textContent = (typeof sVal === 'number' && !isNaN(sVal)) ? sVal.toFixed(6) : '---';
+    }
+    if (elGeoid) {
+      elGeoid.textContent = (typeof pt.geoid === 'number') ? `${pt.geoid} m` : '保存時に自動取得';
+    }
   } else {
     title.textContent = '既知点の追加';
     editId.value = '';
@@ -6083,6 +6239,8 @@ function openKnownModal(pt = null) {
     pY.value = '';
     pH.value = '';
     pZone.value = State.currentZoneId;
+    if (elScale) elScale.textContent = '保存時に自動計算';
+    if (elGeoid) elGeoid.textContent = '保存時に自動取得';
   }
 
   updateAxisLabels();
@@ -6139,6 +6297,7 @@ function fillModalWithCurrentPos() {
   }
   document.getElementById('modalZone').value = State.currentZoneId;
   const srcName = p.gsiH !== null ? '地理院' : (p.gpsH !== null ? 'GPS' : (State.isGsiElevLoading ? '取得中' : 'なし'));
+  updateModalScalePreview();
   showToast(`現在地を反映 (H: ${srcName})`);
 }
 
@@ -6190,6 +6349,8 @@ function savePointFromModal() {
   }
 
   const targetName = name || `点 #${State.knownPoints.length + 1}`;
+  const eastDist = (State.isSurveyAxis) ? y : x;
+  const calcScale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
 
   // 同名既知点の重複チェック (自分自身の編集時は除く)
   const dupIdx = State.knownPoints.findIndex(p => p.name.trim().toUpperCase() === targetName.toUpperCase() && p.id !== editId);
@@ -6204,6 +6365,8 @@ function savePointFromModal() {
       x: x,
       y: y,
       h: h,
+      scale: calcScale,
+      geoid: (existing.x === x && existing.y === y && existing.geoid !== undefined && existing.geoid !== null) ? existing.geoid : null,
       zoneId: zoneId,
       isSurveySaved: State.isSurveyAxis
     };
@@ -6211,6 +6374,7 @@ function savePointFromModal() {
     savePoints();
     renderKnownPoints();
     closeModal();
+    startBackgroundGeoidFetch();
     return;
   }
 
@@ -6218,12 +6382,15 @@ function savePointFromModal() {
     // 編集
     const idx = State.knownPoints.findIndex(p => p.id === editId);
     if (idx !== -1) {
+      const prev = State.knownPoints[idx];
       State.knownPoints[idx] = {
-        ...State.knownPoints[idx],
+        ...prev,
         name: targetName,
         x: x,
         y: y,
         h: h,
+        scale: calcScale,
+        geoid: (prev.x === x && prev.y === y && prev.geoid !== undefined && prev.geoid !== null) ? prev.geoid : null,
         zoneId: zoneId,
         isSurveySaved: State.isSurveyAxis
       };
@@ -6237,6 +6404,8 @@ function savePointFromModal() {
       x: x,
       y: y,
       h: h,
+      scale: calcScale,
+      geoid: null,
       zoneId: zoneId,
       isSurveySaved: State.isSurveyAxis
     };
@@ -6247,6 +6416,7 @@ function savePointFromModal() {
   savePoints();
   renderKnownPoints();
   closeModal();
+  startBackgroundGeoidFetch();
 }
 
 // --- インライン手入力フォーム処理 ---
@@ -6267,6 +6437,8 @@ function savePointFromInline() {
   }
 
   const targetName = name || `点 #${State.knownPoints.length + 1}`;
+  const eastDist = (State.isSurveyAxis) ? y : x;
+  const calcScale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
 
   // 同名既知点の重複チェック
   const dupIdx = State.knownPoints.findIndex(p => p.name.trim().toUpperCase() === targetName.toUpperCase());
@@ -6281,6 +6453,8 @@ function savePointFromInline() {
       x: x,
       y: y,
       h: h,
+      scale: calcScale,
+      geoid: (existing.x === x && existing.y === y && existing.geoid !== undefined && existing.geoid !== null) ? existing.geoid : null,
       zoneId: zoneId,
       isSurveySaved: State.isSurveyAxis
     };
@@ -6293,6 +6467,8 @@ function savePointFromInline() {
     document.getElementById('inlineCoordX').value = '';
     document.getElementById('inlineCoordY').value = '';
     document.getElementById('inlineCoordH').value = '';
+    updateInlineScalePreview();
+    startBackgroundGeoidFetch();
     return;
   }
 
@@ -6302,6 +6478,8 @@ function savePointFromInline() {
     x: x,
     y: y,
     h: h,
+    scale: calcScale,
+    geoid: null,
     zoneId: zoneId,
     isSurveySaved: State.isSurveyAxis
   };
@@ -6309,12 +6487,14 @@ function savePointFromInline() {
   State.knownPoints.push(newPt);
   savePoints();
   renderKnownPoints();
+  startBackgroundGeoidFetch();
 
   // 入力欄をクリア (点名は次点用に連番で補完)
   document.getElementById('inlinePointName').value = '';
   document.getElementById('inlineCoordX').value = '';
   document.getElementById('inlineCoordY').value = '';
   document.getElementById('inlineCoordH').value = '';
+  updateInlineScalePreview();
 
   showToast(`既知点「${newPt.name}」を手入力登録しました`);
 
@@ -6344,6 +6524,7 @@ function fillInlineWithCurrentPos() {
   }
   document.getElementById('inlinePointZone').value = State.currentZoneId;
   const srcName = p.gsiH !== null ? '地理院T.P.' : (p.gpsH !== null ? 'GPS' : (State.isGsiElevLoading ? '取得中' : 'なし'));
+  updateInlineScalePreview();
   showToast(`現在地の座標を反映 (H: ${srcName})`);
 }
 
@@ -6699,10 +6880,18 @@ function loadSettingsAndPoints() {
           pt.id = 'pt_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 5);
           needsSave = true;
         }
+        // 縮尺係数が未設定なら計算補完
+        if (typeof pt.scale !== 'number' || isNaN(pt.scale)) {
+          const eastDist = (pt.isSurveySaved !== false) ? pt.y : pt.x;
+          pt.scale = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
+          needsSave = true;
+        }
       });
       if (needsSave) {
         savePoints();
       }
+      // ジオイド高が未取得の点があればバックグラウンドで自動取得
+      startBackgroundGeoidFetch();
     }
 
     const set = localStorage.getItem('survey_app_settings');
@@ -6725,6 +6914,14 @@ function loadSettingsAndPoints() {
     console.error('Failed to load storage:', e);
   }
 }
+
+// ユーザーが手動で地図をドラッグ操作したら追従を一時解除
+map.on('dragstart', () => {
+  if (State.isWatchingGps && State.isGpsFollow) {
+    State.isGpsFollow = false;
+    updateGpsStatusUI();
+  }
+});
 
 // --- 地図クリックイベント (スナップ計測 / 通常タップ & 逆打ち誘導) ---
 map.on('click', async (e) => {
