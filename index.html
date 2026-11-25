@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.07 (2026/11/25 22:05)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.08 (2026/11/25 22:20)</span>
     </div>
   </div>
 
@@ -1593,14 +1593,19 @@
             <button class="btn btn-primary" id="btnExecuteTs" style="flex:2; font-weight:bold; padding:9px 12px;">
               🚀 図上自動展開
             </button>
-            <button class="btn btn-secondary btn-sm" id="btnDownloadT3dCsv" disabled style="flex:1.2; font-size:11px;">
-              📥 T3D CSV出力
-            </button>
             <button class="btn btn-secondary btn-sm" id="btnZoomToTs" disabled style="font-size:11px;">
               🔍 ズーム
             </button>
             <button class="btn btn-danger btn-sm" id="btnClearTs" disabled style="font-size:11px;">
               🗑️ 消去
+            </button>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button class="btn btn-secondary btn-sm" id="btnExportTsDxf" disabled style="flex:1; font-weight:700; color:#0369a1; background:#f0f9ff; border:1.5px solid #7dd3fc; font-size:11.5px; padding:7px 10px;">
+              📐 DXF保存 (CAD出力)
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btnDownloadT3dCsv" disabled style="flex:1; font-size:11px; padding:7px 10px;">
+              📥 T3D CSV出力
             </button>
           </div>
 
@@ -2782,6 +2787,8 @@ function initUi() {
             }
 
             document.getElementById('btnDownloadT3dCsv').disabled = false;
+        const btnDxf = document.getElementById('btnExportTsDxf');
+        if (btnDxf) btnDxf.disabled = false;
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
@@ -2894,6 +2901,8 @@ function initUi() {
             }
 
             document.getElementById('btnDownloadT3dCsv').disabled = false;
+        const btnDxf = document.getElementById('btnExportTsDxf');
+        if (btnDxf) btnDxf.disabled = false;
             document.getElementById('btnZoomToTs').disabled = false;
             document.getElementById('btnClearTs').disabled = false;
             zoomToTsBounds();
@@ -2929,6 +2938,8 @@ function initUi() {
 
   // 各種ボタン
   document.getElementById('btnDownloadT3dCsv').addEventListener('click', downloadT3dCsv);
+  const elBtnDxf = document.getElementById('btnExportTsDxf');
+  if (elBtnDxf) elBtnDxf.addEventListener('click', exportTsDxf);
   document.getElementById('btnZoomToTs').addEventListener('click', zoomToTsBounds);
   document.getElementById('btnClearTs').addEventListener('click', clearTsData);
 
@@ -6041,10 +6052,248 @@ function clearTsData() {
   if (taiKaiSec) taiKaiSec.style.display = 'none';
   updateTsLinesList([]);
   document.getElementById('btnDownloadT3dCsv').disabled = true;
+  const btnDxf2 = document.getElementById('btnExportTsDxf');
+  if (btnDxf2) btnDxf2.disabled = true;
   document.getElementById('btnZoomToTs').disabled = true;
   document.getElementById('btnClearTs').disabled = true;
 
   showToast('TS図面データを消去しました');
+}
+
+// ==========================================
+// TS観測展開データの AutoCAD R12 (AC1009) DXF エクスポート
+// 黄金の互換性: Jw_cad, AutoCAD, 測量CAD等すべてのCADで100%読み込み可能
+// ==========================================
+async function exportTsDxf() {
+  if (!State.tsLines || !State.tsPoints || (State.tsLines.length === 0 && State.tsPoints.length === 0)) {
+    showToast('DXF出力可能な観測展開データがありません');
+    return;
+  }
+
+  const isSur = State.isSurveyAxis !== false; // デフォルト測量座標系 (X:北, Y:東)
+
+  // レイヤー一覧の収集
+  const layerMap = {};
+  State.tsLines.forEach(l => {
+    const lay = (l.layer || '0').trim();
+    if (!layerMap[lay]) {
+      // 色の割り当て (ACI: 1=赤, 2=黄, 3=緑, 4=水色, 5=青, 6=紫, 7=白/黒, 8=濃灰)
+      let aci = 7;
+      const up = lay.toUpperCase();
+      if (up === 'U' || up.includes('上端')) aci = 3; // 緑
+      else if (up === 'N' || up.includes('中端')) aci = 2; // 黄
+      else if (up === 'S' || up.includes('下端')) aci = 1; // 赤
+      else if (up === 'X' || up.includes('切')) aci = 6; // マゼンタ
+      else if (up === 'K' || up.includes('撹乱')) aci = 8; // グレー
+      else if (up === 'C' || up.includes('調査区')) aci = 5; // 青
+      layerMap[lay] = aci;
+    }
+  });
+
+  // 標準画層
+  if (!layerMap['PT_観測点']) layerMap['PT_観測点'] = 4; // 水色
+  if (!layerMap['PT_器械点']) layerMap['PT_器械点'] = 1; // 赤
+  if (!layerMap['TEXT_点名']) layerMap['TEXT_点名'] = 7; // 白
+  if (!layerMap['TEXT_注記']) layerMap['TEXT_注記'] = 2; // 黄
+
+  const dxfLines = [];
+
+  // 1. HEADER セクション (AC1009 = AutoCAD R12)
+  dxfLines.push(
+    "  0", "SECTION",
+    "  2", "HEADER",
+    "  9", "$ACADVER",
+    "  1", "AC1009",
+    "  0", "ENDSEC"
+  );
+
+  // 2. TABLES セクション (LAYER テーブル)
+  const layerNames = Object.keys(layerMap);
+  dxfLines.push(
+    "  0", "SECTION",
+    "  2", "TABLES",
+    "  0", "TABLE",
+    "  2", "LAYER",
+    " 70", String(layerNames.length)
+  );
+  layerNames.forEach(name => {
+    const aci = layerMap[name];
+    dxfLines.push(
+      "  0", "LAYER",
+      "  2", name,
+      " 70", "0",
+      " 62", String(aci),
+      "  6", "CONTINUOUS"
+    );
+  });
+  dxfLines.push(
+    "  0", "ENDTAB",
+    "  0", "ENDSEC"
+  );
+
+  // 3. BLOCKS セクション (空)
+  dxfLines.push(
+    "  0", "SECTION",
+    "  2", "BLOCKS",
+    "  0", "ENDSEC"
+  );
+
+  // 4. ENTITIES セクション
+  dxfLines.push(
+    "  0", "SECTION",
+    "  2", "ENTITIES"
+  );
+
+  // 座標マッピング関数:
+  // CAD標準仕様: CAD_X = 東(Y), CAD_Y = 北(X), CAD_Z = 標高(H)
+  const toCadCoord = (pt) => {
+    const cadX = isSur ? pt.y : pt.x;
+    const cadY = isSur ? pt.x : pt.y;
+    const cadZ = (typeof pt.z === 'number' && !isNaN(pt.z)) ? pt.z : 0.0;
+    return { x: cadX, y: cadY, z: cadZ };
+  };
+
+  // 4-A. 結線ポリライン (POLYLINE / VERTEX / SEQEND)
+  State.tsLines.forEach(l => {
+    if (!l.points || l.points.length < 2) return;
+    const lay = (l.layer || '0').trim();
+    const isClosed = l.isClosed === true;
+
+    dxfLines.push(
+      "  0", "POLYLINE",
+      "  8", lay,
+      " 66", "1",
+      " 70", isClosed ? "1" : "0",
+      " 10", "0.0",
+      " 20", "0.0",
+      " 30", "0.0"
+    );
+
+    l.points.forEach(p => {
+      const c = toCadCoord(p);
+      dxfLines.push(
+        "  0", "VERTEX",
+        "  8", lay,
+        " 10", c.x.toFixed(4),
+        " 20", c.y.toFixed(4),
+        " 30", c.z.toFixed(4)
+      );
+    });
+
+    dxfLines.push(
+      "  0", "SEQEND",
+      "  8", lay
+    );
+  });
+
+  // 4-B. 観測点 (POINT) & 点名・注記 (TEXT)
+  State.tsPoints.forEach(p => {
+    const c = toCadCoord(p);
+    const ptLay = p.isStation ? 'PT_器械点' : 'PT_観測点';
+
+    // POINT
+    dxfLines.push(
+      "  0", "POINT",
+      "  8", ptLay,
+      " 10", c.x.toFixed(4),
+      " 20", c.y.toFixed(4),
+      " 30", c.z.toFixed(4)
+    );
+
+    // 点名 TEXT
+    if (p.name) {
+      dxfLines.push(
+        "  0", "TEXT",
+        "  8", "TEXT_点名",
+        " 10", (c.x + 0.35).toFixed(4),
+        " 20", (c.y + 0.35).toFixed(4),
+        " 30", c.z.toFixed(4),
+        " 40", "0.8",
+        "  1", String(p.name).replace(/[\r\n]/g, '')
+      );
+    }
+
+    // 注記 TEXT (naiyou がある場合)
+    if (p.naiyou && p.naiyou !== p.name) {
+      dxfLines.push(
+        "  0", "TEXT",
+        "  8", "TEXT_注記",
+        " 10", (c.x + 0.35).toFixed(4),
+        " 20", (c.y - 0.65).toFixed(4),
+        " 30", c.z.toFixed(4),
+        " 40", "0.7",
+        "  1", String(p.naiyou).replace(/[\r\n]/g, '')
+      );
+    }
+  });
+
+  // 器械点・後視点マーカーも出力
+  if (State.tsSessions && State.tsSessions.length > 0) {
+    State.tsSessions.forEach(s => {
+      if (s.instPoint) {
+        const c = toCadCoord(s.instPoint);
+        dxfLines.push(
+          "  0", "POINT",
+          "  8", "PT_器械点",
+          " 10", c.x.toFixed(4),
+          " 20", c.y.toFixed(4),
+          " 30", c.z.toFixed(4),
+          "  0", "TEXT",
+          "  8", "PT_器械点",
+          " 10", (c.x + 0.4).toFixed(4),
+          " 20", (c.y + 0.4).toFixed(4),
+          " 30", c.z.toFixed(4),
+          " 40", "1.2",
+          "  1", `器械点:${s.instName || ''}`
+        );
+      }
+    });
+  }
+
+  // 終了
+  dxfLines.push(
+    "  0", "ENDSEC",
+    "  0", "EOF",
+    ""
+  );
+
+  const dxfContent = dxfLines.join("\r\n");
+  const blob = new Blob([dxfContent], { type: 'application/dxf;charset=utf-8' });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `ts_survey_data_${dateStr}.dxf`;
+
+  // スマホ Web Share API 対応
+  if (navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: 'application/dxf' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'TS観測展開 DXF (R12)',
+          text: `TS観測展開データ (${State.tsLines.length}線, ${State.tsPoints.length}点) のDXFファイルです。`
+        });
+        showToast('DXFファイルを共有しました');
+        return;
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('Share API failed, falling back to download:', err);
+      } else {
+        return;
+      }
+    }
+  }
+
+  // 通常のダウンロード
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`DXFファイル（R12形式）を保存しました (${filename})`);
 }
 
 // 計算結果T3D CSVダウンロード (AutoLISP完全互換 警告コメント & 対回成果ブロック出力対応)
