@@ -1178,7 +1178,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.05 (2026/11/25 21:30)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.06 (2026/11/25 21:55)</span>
     </div>
   </div>
 
@@ -4734,7 +4734,7 @@ function updateModalScalePreview() {
       const ll = xyToLatLng(x, y, zoneId, State.isSurveyAxis);
       if (ll && Geoid2024.isLoaded) {
         const g = Geoid2024.calc(ll.lat, ll.lng);
-        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(4) + ' m' : '---';
+        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(3) + ' m' : '---';
       } else if (!Geoid2024.isLoaded) {
         elGeoid.textContent = '準備中...';
       } else {
@@ -4767,7 +4767,7 @@ function updateInlineScalePreview() {
       const ll = xyToLatLng(x, y, zoneId, State.isSurveyAxis);
       if (ll && Geoid2024.isLoaded) {
         const g = Geoid2024.calc(ll.lat, ll.lng);
-        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(4) + ' m' : '---';
+        elGeoid.textContent = (typeof g === 'number') ? g.toFixed(3) + ' m' : '---';
       } else if (!Geoid2024.isLoaded) {
         elGeoid.textContent = '準備中...';
       } else {
@@ -7274,17 +7274,26 @@ function handleCsvImport() {
           return;
         }
 
-        // 縮尺係数がCSVにない場合はY座標から自動計算補完
-        if (scaleVal === null && !isNaN(yVal)) {
-          scaleVal = Math.round(calcScaleFactor(yVal) * 1000000) / 1000000;
+        // 縮尺係数がCSVにない場合は横軸座標から自動計算補完 (小数第6位)
+        const eastDist = State.isSurveyAxis ? yVal : xVal;
+        if (scaleVal === null && !isNaN(eastDist)) {
+          scaleVal = Math.round(calcScaleFactor(eastDist) * 1000000) / 1000000;
         }
 
-        // ジオイド高があればキャッシュにも登録
-        if (geoidVal !== null && !isNaN(xVal) && !isNaN(yVal)) {
+        // ジオイド高がCSVにない場合は座標から即時計算補完 (mm精度 / 小数第3位)
+        if (!isNaN(xVal) && !isNaN(yVal)) {
           const ll = xyToLatLng(xVal, yVal, State.currentZoneId, State.isSurveyAxis);
           if (ll) {
-            const key = `${ll.lat.toFixed(5)},${ll.lng.toFixed(5)}`;
-            geoidCache[key] = geoidVal;
+            if (geoidVal === null && Geoid2024.isLoaded) {
+              const g = Geoid2024.calc(ll.lat, ll.lng);
+              if (typeof g === 'number' && !isNaN(g)) {
+                geoidVal = Math.round(g * 1000) / 1000;
+              }
+            }
+            if (geoidVal !== null) {
+              const key = `${ll.lat.toFixed(5)},${ll.lng.toFixed(5)}`;
+              geoidCache[key] = geoidVal;
+            }
           }
         }
 
