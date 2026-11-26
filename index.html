@@ -77,6 +77,7 @@
       image-rendering: crisp-edges !important;               /* Standard / Firefox */
       image-rendering: pixelated !important;                 /* Chrome / iOS Safari modern */
       -ms-interpolation-mode: nearest-neighbor !important;   /* IE/Edge */
+      outline: 1px solid transparent;                        /* GPUサブピクセル丸めによる隙間防止 */
     }
 
     /* Custom attribution badge (画面右下に配置) */
@@ -2465,6 +2466,20 @@ async function processElevQueue() {
 }
 
 // --- 4. 地図初期化 (Leaflet + 国土地理院タイル) ---
+// タイル間の隙間（fractional zoom やズーム26超拡大時の 1px seam / 十字の白線）を物理的に完全防止するパッチ
+(function() {
+  const originalInitTile = L.GridLayer.prototype._initTile;
+  L.GridLayer.include({
+    _initTile: function(tile) {
+      originalInitTile.call(this, tile);
+      const tileSize = this.getTileSize();
+      // 幅・高さを +1px して隣接タイルとわずかにオーバーラップさせ、サブピクセル隙間を完全に塞ぐ
+      tile.style.width = (tileSize.x + 1) + 'px';
+      tile.style.height = (tileSize.y + 1) + 'px';
+    }
+  });
+})();
+
 const map = L.map('map', {
   zoomControl: false,
   attributionControl: false, // 右上に自前で配置
