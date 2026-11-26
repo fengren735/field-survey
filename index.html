@@ -188,11 +188,19 @@
       cursor: pointer;
       user-select: none;
       transition: all 0.2s ease;
-      max-width: calc(100vw - 120px);
+      max-width: calc(100vw - 24px);
     }
     .status-pill:hover {
       background: #ffffff;
       box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+    }
+    .status-pill.gps-running {
+      border-color: #22c55e;
+      background: rgba(240, 253, 244, 0.96);
+      box-shadow: 0 4px 14px rgba(22, 163, 74, 0.22);
+    }
+    .status-pill.gps-running:hover {
+      background: #f0fdf4;
     }
     .status-dot {
       width: 8px;
@@ -205,6 +213,27 @@
       background: #22c55e;
       box-shadow: 0 0 6px #22c55e;
       animation: gps-dot-pulse 1.2s infinite;
+    }
+    .status-gps-badge {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #cbd5e1;
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 1px 7px;
+      border-radius: 10px;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .status-gps-badge.active {
+      background: #16a34a;
+      color: #ffffff;
+      border-color: #15803d;
+    }
+    .status-gps-badge.paused {
+      background: #f59e0b;
+      color: #ffffff;
+      border-color: #d97706;
     }
     .status-zone {
       font-size: 11px;
@@ -229,6 +258,20 @@
       color: #64748b;
       margin-left: 2px;
       transition: transform 0.2s;
+    }
+    .status-expand-icon.open {
+      transform: rotate(180deg);
+    }
+
+    @keyframes popIn {
+      from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
     }
 
     /* ステータス詳細ポップアップ */
@@ -257,6 +300,12 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 5px; /* 上下間隔を従来の半分(5px)に集約 */
+      pointer-events: none;
+    }
+    .gps-action-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       pointer-events: none;
     }
     .action-pill {
@@ -303,6 +352,56 @@
     .action-pill.active .pill-icon {
       background: rgba(255, 255, 255, 0.25) !important;
     }
+    .action-pill.pill-gps-start {
+      background: #16a34a;
+      color: #ffffff;
+      border-color: #15803d;
+    }
+    .action-pill.pill-gps-start:hover {
+      background: #15803d;
+    }
+    .action-pill.pill-gps-start .pill-icon {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    .action-pill.pill-gps-start:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+      box-shadow: none;
+      transform: none;
+    }
+    .action-pill.pill-gps-stop {
+      background: #dc2626;
+      color: #ffffff;
+      border-color: #b91c1c;
+    }
+    .action-pill.pill-gps-stop:hover {
+      background: #b91c1c;
+    }
+    .action-pill.pill-gps-stop .pill-icon {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    .action-pill.pill-gps-stop:disabled {
+      background: rgba(255, 255, 255, 0.88);
+      color: #94a3b8;
+      border-color: #cbd5e1;
+      opacity: 0.55;
+      cursor: not-allowed;
+      pointer-events: none;
+      box-shadow: none;
+      transform: none;
+    }
+    .action-pill.pill-gps-stop:disabled .pill-icon {
+      background: #f1f5f9;
+    }
+    .action-pill.pill-gps.follow-active {
+      background: #f0f9ff;
+      color: #0369a1;
+      border-color: #0284c7;
+    }
+    .action-pill.pill-gps.follow-active .pill-icon {
+      background: #bae6fd;
+    }
     .action-pill.pill-gps.gps-active {
       background: #16a34a !important;
       color: #ffffff !important;
@@ -312,7 +411,8 @@
     .action-pill.pill-gps.gps-active .pill-icon {
       background: rgba(255, 255, 255, 0.25);
     }
-    .action-pill .pill-badge {
+    .action-pill .pill-badge,
+    .menu-popover-item .pill-badge {
       background: #e2e8f0;
       color: #475569;
       font-size: 10px;
@@ -320,6 +420,199 @@
       padding: 1px 5px;
       border-radius: 10px;
       margin-left: 2px;
+    }
+
+    /* 統合メニューボタン & ポップオーバー */
+    .menu-pill-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      pointer-events: none;
+    }
+    .menu-popover {
+      display: none;
+    }
+    .menu-popover.show {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 5px;
+      min-width: 215px;
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(12px);
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 6px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.2);
+      pointer-events: auto;
+      animation: popIn 0.18s ease-out;
+      z-index: 1050;
+    }
+    .menu-popover-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e293b;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .menu-popover-item:hover {
+      background: #f1f5f9;
+    }
+    .menu-popover-item.active {
+      background: #e0f2fe;
+      color: #0369a1;
+      border-color: #7dd3fc;
+    }
+    .menu-item-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .menu-item-sub {
+      font-size: 10px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .menu-measure-badge {
+      display: none;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .menu-measure-badge.show {
+      display: inline-block;
+    }
+    .pill-measure-dot {
+      display: none;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #0284c7;
+    }
+    .pill-measure-dot.show {
+      display: inline-block;
+      animation: gps-dot-pulse 1.2s infinite;
+    }
+
+    /* 右側フローティングマップコントロール (ズーム＋・－ / 地理院地図切替) */
+    .right-map-controls {
+      position: absolute;
+      top: 56px;
+      right: 12px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .zoom-control-group {
+      width: 46px;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(203, 213, 225, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      pointer-events: auto;
+    }
+    .zoom-ctrl-btn {
+      width: 46px;
+      height: 42px;
+      border: none;
+      background: transparent;
+      color: #1e293b;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      user-select: none;
+    }
+    .zoom-ctrl-btn + .zoom-ctrl-btn {
+      border-top: 1px solid #e2e8f0;
+    }
+    .zoom-ctrl-btn:hover {
+      background: #f1f5f9;
+    }
+    .zoom-ctrl-btn:active {
+      background: #e2e8f0;
+    }
+    .map-layer-control {
+      min-width: 58px;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(203, 213, 225, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      pointer-events: auto;
+    }
+    .map-layer-header {
+      font-size: 9.5px;
+      font-weight: 800;
+      color: #64748b;
+      text-align: center;
+      padding: 4px 4px 3px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      user-select: none;
+    }
+    .map-layer-btn {
+      border: none;
+      background: transparent;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 8px 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .map-layer-btn + .map-layer-btn {
+      border-top: 1px solid #e2e8f0;
+    }
+    .map-layer-btn:hover {
+      background: #f1f5f9;
+    }
+    .map-layer-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .settings-layer-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+    .settings-layer-group .map-layer-btn + .map-layer-btn {
+      border-top: none;
+      border-left: 1px solid var(--border);
     }
 
     /* スライドモーダルシート (ハーフモーダル) */
@@ -1178,7 +1471,7 @@
   <div class="attribution-badge">
     地理院タイル・標高・ジオイド2024: <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a>
     <div style="font-size:9px; color:#64748b; margin-top:2px; text-align:right;">
-      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.14 (2026/11/25 23:40)</span>
+      <span id="appVersionBadge" style="background:#e2e8f0; padding:1px 4px; border-radius:3px; font-weight:bold;">v1.0.15 (2026/11/26 11:18)</span>
     </div>
   </div>
 
@@ -1186,8 +1479,9 @@
   <div class="status-pill-wrap">
     <div class="status-pill" id="statusPill" title="タップで測位詳細を表示 / 非表示">
       <span class="status-dot" id="statusDot"></span>
+      <span class="status-gps-badge" id="statusGpsBadge">停止中</span>
       <span class="status-zone" id="dispZoneBadge">第IX系</span>
-      <span class="status-coord-text" id="statusCoordText">GPS待機中 (タップで測位開始)</span>
+      <span class="status-coord-text" id="statusCoordText">GPS待機中</span>
       <span class="status-expand-icon" id="statusExpandIcon">▾</span>
     </div>
 
@@ -1195,9 +1489,9 @@
     <div class="status-detail-popup" id="statusDetailPopup">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
         <b style="font-size:11px; color:#0369a1;">📍 現在地測位ステータス</b>
-        <span id="gpsLiveBadge" style="display:none; align-items:center; gap:4px; font-size:10px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:12px; padding:1px 6px;">
-          <span style="width:5px; height:5px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span>
-          測位中
+        <span id="gpsLiveBadge" style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:bold; background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; border-radius:12px; padding:1px 6px;">
+          <span style="width:5px; height:5px; border-radius:50%; background:#94a3b8; display:inline-block;"></span>
+          測位停止中
         </span>
       </div>
       <div style="font-size:11px; font-family:monospace; color:#475569; display:flex; flex-direction:column; gap:3px;">
@@ -1216,29 +1510,63 @@
         </div>
       </div>
     </div>
-    <!-- Left Floating Action Pills (直感的な5大機能ピルメニュー: 詳細カード直下に隙間5pxで密着配置) -->
+
+    <!-- Left Floating Action Pills (測位開始/終了・現在地・統合メニュー) -->
     <div class="floating-pill-menu" id="floatingPillMenu">
-    <button class="action-pill pill-gps" id="btnPillGps" title="GPS測位開始・現在地に移動">
-      <span class="pill-icon">🎯</span>
-      <span class="pill-label">現在地</span>
-    </button>
-    <button class="action-pill" id="btnPillPoints" title="基準点の管理・登録・取込">
-      <span class="pill-icon">📍</span>
-      <span class="pill-label">基準点</span>
-      <span class="pill-badge" id="pillKnownCount">0</span>
-    </button>
-    <button class="action-pill" id="btnPillCadTs" title="DXF図面読込・TS展開">
-      <span class="pill-icon">📁</span>
-      <span class="pill-label">図面・TS</span>
-    </button>
-    <button class="action-pill" id="btnPillMeasure" title="距離・面積・比高計測">
-      <span class="pill-icon">📏</span>
-      <span class="pill-label">現場計測</span>
-    </button>
-    <button class="action-pill" id="btnPillSettings" title="座標系・地図切替・表示設定">
-      <span class="pill-icon">⚙️</span>
-      <span class="pill-label">設定</span>
-    </button>
+      <div class="gps-action-row">
+        <button type="button" class="action-pill pill-gps-start" id="btnStartGps" title="GPS連続測位を開始">
+          <span class="pill-icon">📡</span>
+          <span class="pill-label">測位開始</span>
+        </button>
+        <button type="button" class="action-pill pill-gps-stop" id="btnStopGps" title="GPS連続測位を終了" disabled>
+          <span class="pill-icon">⏹</span>
+          <span class="pill-label">測位終了</span>
+        </button>
+      </div>
+      <button type="button" class="action-pill pill-gps" id="btnPillGps" title="現在地へ移動・追従">
+        <span class="pill-icon">🎯</span>
+        <span class="pill-label">現在地</span>
+      </button>
+      <div class="menu-pill-wrap">
+        <button type="button" class="action-pill pill-menu" id="btnPillMenu" aria-expanded="false" title="基準点・図面・現場計測・設定">
+          <span class="pill-icon">☰</span>
+          <span class="pill-label">メニュー</span>
+          <span class="pill-measure-dot" id="pillMenuMeasureDot"></span>
+          <span id="menuArrowIcon" style="font-size:10px; opacity:0.75;">▾</span>
+        </button>
+        <div class="menu-popover" id="menuPopover">
+          <button type="button" class="menu-popover-item" id="btnPillPoints" title="基準点の管理・登録・取込">
+            <span class="menu-item-left"><span>📍</span><span>基準点</span></span>
+            <span class="pill-badge" id="pillKnownCount">0</span>
+          </button>
+          <button type="button" class="menu-popover-item" id="btnPillCadTs" title="DXF図面読込・TS展開">
+            <span class="menu-item-left"><span>📁</span><span>図面・TS</span></span>
+            <span class="menu-item-sub">DXF / TS</span>
+          </button>
+          <button type="button" class="menu-popover-item" id="btnPillMeasure" title="距離・面積・比高計測">
+            <span class="menu-item-left"><span>📏</span><span>現場計測</span></span>
+            <span class="menu-measure-badge" id="menuMeasureBadge">計測中</span>
+          </button>
+          <button type="button" class="menu-popover-item" id="btnPillSettings" title="座標系・地図切替・表示設定">
+            <span class="menu-item-left"><span>⚙️</span><span>設定</span></span>
+            <span class="menu-item-sub">系・軸・地図</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Floating Map Controls (拡大縮小＋・－ / 国土地理院地図切替) -->
+  <div class="right-map-controls">
+    <div class="zoom-control-group">
+      <button type="button" class="zoom-ctrl-btn" id="btnZoomIn" title="拡大">＋</button>
+      <button type="button" class="zoom-ctrl-btn" id="btnZoomOut" title="縮小">－</button>
+    </div>
+    <div class="map-layer-control" id="mapLayerControl" title="国土地理院地図の切り替え">
+      <div class="map-layer-header">🗺️ 地図</div>
+      <button type="button" class="map-layer-btn active" data-layer="std">標準</button>
+      <button type="button" class="map-layer-btn" data-layer="pale">白地図</button>
+      <button type="button" class="map-layer-btn" data-layer="photo">写真</button>
     </div>
   </div>
 
@@ -1686,6 +2014,15 @@
         <!-- Tab 3: System & Axis Settings -->
         <div class="tab-panel" id="tab-settings">
           <div class="form-group">
+            <label class="form-label">背景地図（国土地理院タイル）</label>
+            <div class="settings-layer-group">
+              <button type="button" class="map-layer-btn active" data-layer="std">標準地図</button>
+              <button type="button" class="map-layer-btn" data-layer="pale">白地図（淡色）</button>
+              <button type="button" class="map-layer-btn" data-layer="photo">航空写真</button>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label class="form-label">平面直角座標系（世界測地系 JGD2011/2000）</label>
             <div style="display:flex; gap:8px; align-items:center;">
               <select id="selectZone" class="select-box">
@@ -1716,7 +2053,7 @@
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:11px; color:var(--text-muted);">
-              アプリVer: <b id="settingsVerLabel">v1.0.03 (2026/11/25 21:05)</b>
+              アプリVer: <b id="settingsVerLabel">v1.0.15 (2026/11/26 11:18)</b>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnForceReload" style="font-size:11px;">
               🔄 キャッシュ更新
@@ -2157,21 +2494,46 @@ const tileLayers = {
 
 tileLayers.std.addTo(map);
 
-// レイヤー切り替えトグル
+// レイヤー切り替え共通関数 & イベント設定
 const layerOrder = ['std', 'pale', 'photo'];
 const layerNames = { std: '標準地図', pale: '白地図/淡色', photo: '航空写真' };
-document.getElementById('btnToggleLayers').addEventListener('click', () => {
-  const currentIdx = layerOrder.indexOf(State.activeLayer);
-  const nextIdx = (currentIdx + 1) % layerOrder.length;
-  const nextLayerKey = layerOrder[nextIdx];
 
-  map.removeLayer(tileLayers[State.activeLayer]);
-  tileLayers[nextLayerKey].addTo(map);
-  State.activeLayer = nextLayerKey;
+function setActiveLayer(layerKey, silent = false) {
+  if (!tileLayers[layerKey]) return;
+  if (State.activeLayer !== layerKey) {
+    if (tileLayers[State.activeLayer]) {
+      map.removeLayer(tileLayers[State.activeLayer]);
+    }
+    tileLayers[layerKey].addTo(map);
+    State.activeLayer = layerKey;
+  }
+
+  document.querySelectorAll('.map-layer-btn[data-layer]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-layer') === layerKey);
+  });
+
   if (State.dxfData) {
     renderDxfEntities(false);
   }
-  showToast(`地図を「${layerNames[nextLayerKey]}」に変更`);
+  if (!silent) {
+    saveSettings();
+    showToast(`地図を「${layerNames[layerKey]}」に変更`);
+  }
+}
+
+const elBtnToggleLayers = document.getElementById('btnToggleLayers');
+if (elBtnToggleLayers) {
+  elBtnToggleLayers.addEventListener('click', () => {
+    const currentIdx = layerOrder.indexOf(State.activeLayer);
+    const nextIdx = (currentIdx + 1) % layerOrder.length;
+    setActiveLayer(layerOrder[nextIdx]);
+  });
+}
+
+document.querySelectorAll('.map-layer-btn[data-layer]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setActiveLayer(btn.getAttribute('data-layer'));
+  });
 });
 
 // GPSマーカー & 誤差円
@@ -2200,8 +2562,21 @@ const navLayerGroup = L.layerGroup().addTo(map); // 逆打ち誘導ライン・�
 
 // --- 5. UIの初期化とイベント設定 ---
 function initUi() {
-  // --- A. 新案2: モーダルシート＆フローティングピル制御 ---
+  // --- A. 新案2: モーダルシート＆フローティングピル・統合メニュー制御 ---
+  window.closeMenuPopover = () => {
+    const popover = document.getElementById('menuPopover');
+    const btnMenu = document.getElementById('btnPillMenu');
+    const arrow = document.getElementById('menuArrowIcon');
+    if (popover) popover.classList.remove('show');
+    if (btnMenu) {
+      btnMenu.classList.remove('active');
+      btnMenu.setAttribute('aria-expanded', 'false');
+    }
+    if (arrow) arrow.textContent = '▾';
+  };
+
   window.openModalSheet = (type) => {
+    if (window.closeMenuPopover) window.closeMenuPopover();
     const backdrop = document.getElementById('modalSheetBackdrop');
     const titleEl = document.getElementById('modalSheetTitleText');
     const iconEl = document.getElementById('modalSheetIcon');
@@ -2238,37 +2613,87 @@ function initUi() {
     });
   }
 
-  // ステータスピル (画面上部)
+  // ステータスピル (画面上部: タップで詳細カード表示/非表示のみ)
   const statusPill = document.getElementById('statusPill');
   const statusDetailPopup = document.getElementById('statusDetailPopup');
+  const statusExpandIcon = document.getElementById('statusExpandIcon');
   if (statusPill && statusDetailPopup) {
     statusPill.addEventListener('click', () => {
-      statusDetailPopup.classList.toggle('show');
-      if (!State.isWatchingGps) {
-        toggleGps();
+      const isShown = statusDetailPopup.classList.toggle('show');
+      if (statusExpandIcon) statusExpandIcon.classList.toggle('open', isShown);
+      if (window.closeMenuPopover) window.closeMenuPopover();
+    });
+  }
+
+  // 左側フローティングピル (測位開始・終了・現在地・統合メニュー)
+  const elBtnStartGps = document.getElementById('btnStartGps');
+  if (elBtnStartGps) elBtnStartGps.addEventListener('click', startGps);
+
+  const elBtnStopGps = document.getElementById('btnStopGps');
+  if (elBtnStopGps) elBtnStopGps.addEventListener('click', () => stopGps());
+
+  const elPillGps = document.getElementById('btnPillGps');
+  if (elPillGps) elPillGps.addEventListener('click', moveToCurrentPosition);
+
+  const elBtnPillMenu = document.getElementById('btnPillMenu');
+  const elMenuPopover = document.getElementById('menuPopover');
+  const elMenuArrow = document.getElementById('menuArrowIcon');
+  if (elBtnPillMenu && elMenuPopover) {
+    elBtnPillMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = elMenuPopover.classList.toggle('show');
+      elBtnPillMenu.classList.toggle('active', isOpen);
+      elBtnPillMenu.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (elMenuArrow) elMenuArrow.textContent = isOpen ? '▴' : '▾';
+      if (isOpen && statusDetailPopup) {
+        statusDetailPopup.classList.remove('show');
+        if (statusExpandIcon) statusExpandIcon.classList.remove('open');
       }
     });
   }
 
-  // 右側フローティングピルメニュー
-  const elPillGps = document.getElementById('btnPillGps');
-  if (elPillGps) elPillGps.addEventListener('click', onRecenterBtnClick);
+  document.addEventListener('click', (e) => {
+    if (elMenuPopover && elMenuPopover.classList.contains('show') && !e.target.closest('.menu-pill-wrap')) {
+      if (window.closeMenuPopover) window.closeMenuPopover();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.closeMenuPopover) {
+      window.closeMenuPopover();
+    }
+  });
 
   const elPillPoints = document.getElementById('btnPillPoints');
-  if (elPillPoints) elPillPoints.addEventListener('click', () => window.openModalSheet('points'));
+  if (elPillPoints) {
+    elPillPoints.addEventListener('click', () => {
+      if (window.closeMenuPopover) window.closeMenuPopover();
+      window.openModalSheet('points');
+    });
+  }
 
   const elPillCadTs = document.getElementById('btnPillCadTs');
-  if (elPillCadTs) elPillCadTs.addEventListener('click', () => window.openModalSheet('cadts'));
+  if (elPillCadTs) {
+    elPillCadTs.addEventListener('click', () => {
+      if (window.closeMenuPopover) window.closeMenuPopover();
+      window.openModalSheet('cadts');
+    });
+  }
 
   const elPillMeasure = document.getElementById('btnPillMeasure');
   if (elPillMeasure) {
     elPillMeasure.addEventListener('click', () => {
+      if (window.closeMenuPopover) window.closeMenuPopover();
       toggleMeasureMode('dist');
     });
   }
 
   const elPillSettings = document.getElementById('btnPillSettings');
-  if (elPillSettings) elPillSettings.addEventListener('click', () => window.openModalSheet('settings'));
+  if (elPillSettings) {
+    elPillSettings.addEventListener('click', () => {
+      if (window.closeMenuPopover) window.closeMenuPopover();
+      window.openModalSheet('settings');
+    });
+  }
 
   // --- 従来のシート＆タブ互換 ---
   const bottomBar = document.getElementById('bottomBar');
@@ -2430,15 +2855,17 @@ function initUi() {
   const elZoomIn = document.getElementById('btnZoomIn');
   if (elZoomIn) {
     elZoomIn.addEventListener('click', () => {
+      const targetZoom = Math.min(map.getMaxZoom(), map.getZoom() + (map.options.zoomDelta || 1));
       map.zoomIn();
-      showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
+      showToast(`ズーム: Lv.${targetZoom.toFixed(1)} / 最大${map.getMaxZoom()}`);
     });
   }
   const elZoomOut = document.getElementById('btnZoomOut');
   if (elZoomOut) {
     elZoomOut.addEventListener('click', () => {
+      const targetZoom = Math.max(map.getMinZoom(), map.getZoom() - (map.options.zoomDelta || 1));
       map.zoomOut();
-      showToast(`ズーム: Lv.${map.getZoom().toFixed(1)} / 最大26`);
+      showToast(`ズーム: Lv.${targetZoom.toFixed(1)} / 最大${map.getMaxZoom()}`);
     });
   }
 
@@ -3143,69 +3570,78 @@ function updateAxisLabels() {
 }
 
 // --- 6. GPS位置測位 ---
-function toggleGps() {
+function startGps() {
+  if (State.isWatchingGps) {
+    showToast('🛰️ すでにGPS測位中です');
+    return;
+  }
+  if (!navigator.geolocation) {
+    alert('お使いの端末・ブラウザはGeolocationに対応していません。');
+    return;
+  }
+  showToast('🛰️ GPS測位を開始しました');
+  State.isWatchingGps = true;
+  State.isGpsFollow = true;
+  State.isGsiElevLoading = true;
+
+  const elBtnGps = document.getElementById('btnGps');
+  const elGpsText = document.getElementById('gpsText');
+  const elHGsi = document.getElementById('dispHGsi');
+  if (elGpsText) elGpsText.textContent = '測位中 (追従ON)';
+  if (elBtnGps) elBtnGps.classList.add('active');
+  if (elHGsi) {
+    elHGsi.textContent = '取得中...';
+    elHGsi.style.color = '#0284c7';
+    elHGsi.style.fontWeight = 'bold';
+  }
+
+  updateGpsStatusUI();
+
+  State.watchId = navigator.geolocation.watchPosition(
+    onGpsSuccess,
+    onGpsError,
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+  );
+}
+
+function stopGps(silent = false) {
+  if (State.watchId !== null) {
+    navigator.geolocation.clearWatch(State.watchId);
+    State.watchId = null;
+  }
+  State.isWatchingGps = false;
+  State.isGpsFollow = false;
+  State.isGsiElevLoading = false;
+
+  if (gpsMarker) {
+    map.removeLayer(gpsMarker);
+    gpsMarker = null;
+  }
+  if (gpsCircle) {
+    map.removeLayer(gpsCircle);
+    gpsCircle = null;
+  }
+
   const elBtnGps = document.getElementById('btnGps');
   const elGpsIcon = document.getElementById('gpsIcon');
   const elGpsText = document.getElementById('gpsText');
-  const elRecenter = document.getElementById('btnRecenter');
-  const elLiveBadge = document.getElementById('gpsLiveBadge');
   const elLatLng = document.getElementById('dispLatLng');
+  if (elGpsIcon) elGpsIcon.textContent = '📍';
+  if (elGpsText) elGpsText.textContent = 'GPS測位開始';
+  if (elBtnGps) elBtnGps.classList.remove('active');
+  if (elLatLng && !State.currentPosition) elLatLng.textContent = '測位待機中...';
 
+  updateGpsStatusUI();
+  if (!silent) {
+    showToast('⏹ GPS測位を終了しました');
+  }
+}
+
+function toggleGps() {
   if (State.isWatchingGps) {
-    // 停止
-    if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
-    State.isWatchingGps = false;
-    State.isGpsFollow = false;
-    State.watchId = null;
-    State.isGsiElevLoading = false;
-    if (gpsMarker) {
-      map.removeLayer(gpsMarker);
-      gpsMarker = null;
-    }
-    if (gpsCircle) {
-      map.removeLayer(gpsCircle);
-      gpsCircle = null;
-    }
-    if (elGpsIcon) elGpsIcon.textContent = '📍';
-    if (elGpsText) elGpsText.textContent = 'GPS測位開始';
-    if (elBtnGps) elBtnGps.classList.remove('active');
-    if (elRecenter) {
-      elRecenter.classList.remove('gps-active');
-      elRecenter.title = 'GPS測位開始 / 現在地に移動';
-    }
-    if (elLiveBadge) elLiveBadge.style.display = 'none';
-    if (elLatLng && !State.currentPosition) elLatLng.textContent = '測位待機中...';
-    showToast('GPS測位を停止しました');
-    updateGpsStatusUI();
+    stopGps();
   } else {
-    // 開始
-    if (!navigator.geolocation) {
-      alert('お使いの端末・ブラウザはGeolocationに対応していません。');
-      return;
-    }
-    showToast('🛰️ GPS追従測位を開始中...');
-    State.isWatchingGps = true;
-    State.isGpsFollow = true;
-    if (elGpsText) elGpsText.textContent = '測位中 (追従ON)';
-    if (elBtnGps) elBtnGps.classList.add('active');
-    if (elRecenter) {
-      elRecenter.classList.add('gps-active');
-      elRecenter.title = '追従中 (タップで停止 / 地図ドラッグで追従解除)';
-    }
-    if (elLiveBadge) elLiveBadge.style.display = 'inline-flex';
-    State.isGsiElevLoading = true;
-    const elHGsi = document.getElementById('dispHGsi');
-    if (elHGsi) {
-      elHGsi.textContent = '取得中...';
-      elHGsi.style.color = '#0284c7';
-      elHGsi.style.fontWeight = 'bold';
-    }
-
-    State.watchId = navigator.geolocation.watchPosition(
-      onGpsSuccess,
-      onGpsError,
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
-    );
+    startGps();
   }
 }
 
@@ -3214,48 +3650,103 @@ function updateGpsStatusUI() {
   const elLiveBadge = document.getElementById('gpsLiveBadge');
   const elRecenter = document.getElementById('btnRecenter');
   const elPillGps = document.getElementById('btnPillGps');
+  const elStartGps = document.getElementById('btnStartGps');
+  const elStopGps = document.getElementById('btnStopGps');
+  const statusPill = document.getElementById('statusPill');
   const statusDot = document.getElementById('statusDot');
+  const statusGpsBadge = document.getElementById('statusGpsBadge');
   const statusCoordText = document.getElementById('statusCoordText');
 
   // 基準点カウントバッジ
   const pillCount = document.getElementById('pillKnownCount');
   if (pillCount && State.knownPoints) pillCount.textContent = State.knownPoints.length;
 
+  const p = State.currentPosition;
+  const isSur = State.isSurveyAxis;
+  const accText = (p && typeof p.accuracy === 'number') ? ` (±${Math.round(p.accuracy)}m)` : '';
+
+  if (elStartGps) elStartGps.disabled = State.isWatchingGps;
+  if (elStopGps) elStopGps.disabled = !State.isWatchingGps;
+
   if (!State.isWatchingGps) {
-    if (elLiveBadge) elLiveBadge.style.display = 'none';
+    if (statusPill) statusPill.classList.remove('gps-running');
+    if (statusDot) statusDot.classList.remove('active');
+    if (statusGpsBadge) {
+      statusGpsBadge.classList.remove('active', 'paused');
+      statusGpsBadge.textContent = '停止中';
+    }
     if (elRecenter) {
       elRecenter.classList.remove('gps-active');
-      elRecenter.title = 'GPS測位開始 / 現在地に移動';
+      elRecenter.title = '現在地に移動';
     }
-    if (elPillGps) elPillGps.classList.remove('gps-active');
-    if (statusDot) statusDot.classList.remove('active');
-    if (statusCoordText) statusCoordText.textContent = 'GPS待機中 (タップで測位開始)';
+    if (elPillGps) {
+      elPillGps.classList.remove('gps-active', 'follow-active');
+      elPillGps.title = '現在地へ移動 (1回測位)';
+    }
+    if (statusCoordText) {
+      if (p) {
+        const xVal = isSur ? p.surveyX : p.mathX;
+        const yVal = isSur ? p.surveyY : p.mathY;
+        const hVal = p.gsiH !== null ? `${p.gsiH.toFixed(2)}m` : (p.gpsH !== null ? `${p.gpsH.toFixed(1)}m` : '---');
+        statusCoordText.textContent = `(最終) X:${xVal.toFixed(1)}, Y:${yVal.toFixed(1)} | H:${hVal}`;
+      } else {
+        statusCoordText.textContent = 'GPS待機中';
+      }
+    }
+    if (elLiveBadge) {
+      elLiveBadge.style.display = 'inline-flex';
+      elLiveBadge.style.background = '#f1f5f9';
+      elLiveBadge.style.color = '#64748b';
+      elLiveBadge.style.borderColor = '#cbd5e1';
+      elLiveBadge.innerHTML = `<span style="width:6px; height:6px; border-radius:50%; background:#94a3b8; display:inline-block;"></span> 測位停止中`;
+    }
     return;
   }
 
-  const p = State.currentPosition;
-  const accText = (p && typeof p.accuracy === 'number') ? ` (±${Math.round(p.accuracy)}m)` : '';
+  // 測位中
+  if (statusPill) statusPill.classList.add('gps-running');
+  if (statusDot) statusDot.classList.add('active');
+
+  if (statusGpsBadge) {
+    statusGpsBadge.classList.remove('active', 'paused');
+    if (State.isGpsFollow) {
+      statusGpsBadge.classList.add('active');
+      statusGpsBadge.textContent = '測位中';
+    } else {
+      statusGpsBadge.classList.add('paused');
+      statusGpsBadge.textContent = '測位中(追従OFF)';
+    }
+  }
 
   if (elPillGps) {
-    if (State.isGpsFollow) elPillGps.classList.add('gps-active');
-    else elPillGps.classList.remove('gps-active');
+    elPillGps.classList.remove('gps-active');
+    if (State.isGpsFollow) {
+      elPillGps.classList.add('follow-active');
+      elPillGps.title = '現在地を中心に追従中 (タップで再フォーカス)';
+    } else {
+      elPillGps.classList.remove('follow-active');
+      elPillGps.title = '現在地へ移動・追従再開';
+    }
   }
-  if (statusDot) statusDot.classList.add('active');
-  if (p && statusCoordText) {
-    const isSur = State.isSurveyAxis;
-    const xVal = isSur ? p.surveyX : p.mathX;
-    const yVal = isSur ? p.surveyY : p.mathY;
-    const hVal = p.gsiH !== null ? `${p.gsiH.toFixed(2)}m` : (p.gpsH !== null ? `${p.gpsH.toFixed(1)}m` : '---');
-    statusCoordText.textContent = `X: ${xVal.toFixed(1)}, Y: ${yVal.toFixed(1)} | H: ${hVal}${accText}`;
+
+  if (statusCoordText) {
+    if (p) {
+      const xVal = isSur ? p.surveyX : p.mathX;
+      const yVal = isSur ? p.surveyY : p.mathY;
+      const hVal = p.gsiH !== null ? `${p.gsiH.toFixed(2)}m` : (p.gpsH !== null ? `${p.gpsH.toFixed(1)}m` : '---');
+      statusCoordText.textContent = `X:${xVal.toFixed(1)}, Y:${yVal.toFixed(1)} | H:${hVal}${accText}`;
+    } else {
+      statusCoordText.textContent = '衛星捕捉中...';
+    }
   }
 
   if (elRecenter) {
     if (State.isGpsFollow) {
       elRecenter.classList.add('gps-active');
-      elRecenter.title = '追従中 (タップで停止 / 地図ドラッグで追従解除)';
+      elRecenter.title = '現在地追従中';
     } else {
       elRecenter.classList.remove('gps-active');
-      elRecenter.title = '追従一時停止中 (タップで現在地へ移動・追従再開)';
+      elRecenter.title = '現在地へ移動・追従再開';
     }
   }
 
@@ -3265,47 +3756,23 @@ function updateGpsStatusUI() {
       elLiveBadge.style.background = '#dcfce7';
       elLiveBadge.style.color = '#15803d';
       elLiveBadge.style.borderColor = '#86efac';
-      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span> 追従中${accText}`;
+      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; animation:gps-dot-pulse 1.2s infinite;"></span> 測位中（追従ON）${accText}`;
     } else {
       elLiveBadge.style.background = '#fef3c7';
       elLiveBadge.style.color = '#b45309';
       elLiveBadge.style.borderColor = '#fde68a';
-      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#f59e0b; display:inline-block;"></span> 追従一時停止${accText}`;
+      elLiveBadge.innerHTML = `<span style="width:7px; height:7px; border-radius:50%; background:#f59e0b; display:inline-block;"></span> 測位中（追従一時停止）${accText}`;
     }
   }
 }
 
-// マップ上の🎯ボタン（測位開始・現在地移動・停止）
+// マップ上の🎯ボタン（現在地移動のみ：測位は終了しない）
 function onRecenterBtnClick() {
-  if (!State.isWatchingGps) {
-    // 測位停止中なら測位開始＆追従ON
-    toggleGps();
-    if (State.currentPosition) {
-      map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
-    }
-  } else {
-    // 測位中の場合:
-    if (State.currentPosition) {
-      const center = map.getCenter();
-      const dist = map.distance(center, [State.currentPosition.lat, State.currentPosition.lng]);
-      // すでに画面中心にいて追従中の状態で再度押されたら測位停止
-      if (State.isGpsFollow && dist < 10) {
-        toggleGps();
-      } else {
-        // 追従が外れていた場合、または離れていた場合は中心に戻して追従再開
-        State.isGpsFollow = true;
-        map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
-        showToast('現在地追従を再開しました');
-        updateGpsStatusUI();
-      }
-    } else {
-      showToast('現在地を取得中...');
-    }
-  }
+  moveToCurrentPosition();
 }
 
-async function onGpsSuccess(pos) {
-  const { latitude, longitude, altitude, accuracy, altitudeAccuracy } = pos.coords;
+async function applyPositionCoords(coords) {
+  const { latitude, longitude, altitude, accuracy, altitudeAccuracy } = coords;
 
   // 系の自動判定
   if (State.autoZone) {
@@ -3314,7 +3781,7 @@ async function onGpsSuccess(pos) {
       State.currentZoneId = autoZ;
       document.getElementById('selectZone').value = autoZ;
       document.getElementById('modalZone').value = autoZ;
-      
+
       // DXFの系も現在地に合わせて自動更新
       const dxfZoneSel = document.getElementById('dxfZoneSelect');
       if (dxfZoneSel) {
@@ -3395,12 +3862,23 @@ async function onGpsSuccess(pos) {
   }
 }
 
+async function onGpsSuccess(pos) {
+  await applyPositionCoords(pos.coords);
+}
+
 function onGpsError(err) {
   console.error('GPSエラー:', err);
   let msg = '位置情報を取得できませんでした。';
-  if (err.code === 1) msg = '位置情報の利用が許可されていません。';
-  if (err.code === 2) msg = '位置を特定できませんでした。';
-  if (err.code === 3) msg = '位置情報の取得がタイムアウトしました。';
+  if (err.code === 1) {
+    msg = '位置情報の利用が許可されていません。';
+    if (State.isWatchingGps) {
+      stopGps(true);
+    }
+  } else if (err.code === 2) {
+    msg = '位置を特定できませんでした。';
+  } else if (err.code === 3) {
+    msg = '位置情報の取得がタイムアウトしました。';
+  }
   showToast(msg);
 }
 
@@ -3501,18 +3979,51 @@ function updateMapGpsMarker() {
   }
 }
 
-// 現在地に移動
+// 現在地に移動（測位中なら追従再開＆中央移動、停止中なら1回だけ取得して移動し連続測位は開始しない）
 function moveToCurrentPosition() {
-  if (State.currentPosition) {
-    const targetZoom = Math.max(map.getZoom(), 19);
-    map.setView([State.currentPosition.lat, State.currentPosition.lng], targetZoom, { animate: true });
-    showToast('現在地に移動しました');
-  } else {
-    showToast('現在地を取得します...');
-    if (!State.isWatchingGps) {
-      toggleGps();
+  if (State.isWatchingGps) {
+    State.isGpsFollow = true;
+    if (State.currentPosition) {
+      const targetZoom = Math.max(map.getZoom(), 19);
+      map.setView([State.currentPosition.lat, State.currentPosition.lng], targetZoom, { animate: true });
+      updateGpsStatusUI();
+      showToast('🎯 現在地へ移動しました（追従ON）');
+    } else {
+      updateGpsStatusUI();
+      showToast('🛰️ 測位中です。衛星を捕捉しています...');
     }
+    return;
   }
+
+  if (!navigator.geolocation) {
+    if (State.currentPosition) {
+      map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
+      showToast('🎯 直近の現在地へ移動しました');
+    } else {
+      alert('お使いの端末・ブラウザはGeolocationに対応していません。');
+    }
+    return;
+  }
+
+  showToast('🎯 現在地を取得しています...');
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      await applyPositionCoords(pos.coords);
+      map.setView([pos.coords.latitude, pos.coords.longitude], Math.max(map.getZoom(), 19), { animate: true });
+      if (!State.isWatchingGps) {
+        showToast('🎯 現在地へ移動しました（連続測位は「測位開始」）');
+      }
+    },
+    (err) => {
+      if (State.currentPosition) {
+        map.setView([State.currentPosition.lat, State.currentPosition.lng], Math.max(map.getZoom(), 19), { animate: true });
+        showToast('🎯 直近の現在地へ移動しました');
+      } else {
+        onGpsError(err);
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
 }
 
 // 既知点に移動
@@ -6806,6 +7317,8 @@ function toggleMeasureMode(mode = 'dist') {
   const measureBottom = document.getElementById('measureBottomPanel');
   const bottomBar = document.getElementById('bottomBar');
   const pillMeasure = document.getElementById('btnPillMeasure');
+  const menuMeasureBadge = document.getElementById('menuMeasureBadge');
+  const pillMenuMeasureDot = document.getElementById('pillMenuMeasureDot');
   const btnToggleSheet = document.getElementById('btnToggleSheet');
   const mapEl = map.getContainer();
 
@@ -6814,6 +7327,8 @@ function toggleMeasureMode(mode = 'dist') {
     if (normalActions) normalActions.style.display = 'none';
     if (measureBottom) measureBottom.style.display = 'flex';
     if (pillMeasure) pillMeasure.classList.add('active');
+    if (menuMeasureBadge) menuMeasureBadge.classList.add('show');
+    if (pillMenuMeasureDot) pillMenuMeasureDot.classList.add('show');
     mapEl.classList.add('measuring-mode'); // 矢印カーソルに切り替え
     if (bottomBar) bottomBar.classList.remove('expanded');
     if (btnToggleSheet) btnToggleSheet.textContent = '詳細 ▾';
@@ -6823,6 +7338,8 @@ function toggleMeasureMode(mode = 'dist') {
   } else {
     if (bottomBar) bottomBar.style.display = 'none';
     if (pillMeasure) pillMeasure.classList.remove('active');
+    if (menuMeasureBadge) menuMeasureBadge.classList.remove('show');
+    if (pillMenuMeasureDot) pillMenuMeasureDot.classList.remove('show');
     if (btnDist) {
       btnDist.classList.remove('active');
       btnDist.style.background = '';
@@ -7997,7 +8514,8 @@ function saveSettings() {
       zoneId: State.currentZoneId,
       autoZone: State.autoZone,
       isSurveyAxis: State.isSurveyAxis,
-      showPointNames: State.showPointNames
+      showPointNames: State.showPointNames,
+      activeLayer: State.activeLayer
     };
     localStorage.setItem('survey_app_settings', JSON.stringify(settings));
   } catch (e) {
@@ -8041,6 +8559,9 @@ function loadSettingsAndPoints() {
         State.showPointNames = parsed.showPointNames;
         const chk = document.getElementById('chkShowPointNames');
         if (chk) chk.checked = State.showPointNames;
+      }
+      if (parsed.activeLayer && typeof setActiveLayer === 'function') {
+        setActiveLayer(parsed.activeLayer, true);
       }
 
       document.getElementById('selectZone').value = State.currentZoneId;
